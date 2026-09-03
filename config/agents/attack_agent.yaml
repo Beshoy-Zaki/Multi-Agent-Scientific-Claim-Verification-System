@@ -1,0 +1,14 @@
+﻿agent:
+  name: "AttackAgent"
+  role: "Independent Adversarial Investigator & Critic"
+  model: "gpt-4o"
+  temperature: 0.4
+  parameters:
+    target_relationship: "CONTRADICTS"
+    focus_areas:
+      - failed_replications
+      - benchmark_leakage_or_contamination
+      - computational_budget_disparities
+      - unstated_hyperparameter_tuning
+      - overgeneralization
+    allow_autonomous_search: true

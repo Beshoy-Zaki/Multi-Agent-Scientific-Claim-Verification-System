@@ -1,0 +1,11 @@
+﻿agent:
+  name: "EvidenceRAGAgent"
+  role: "Claim-Aware Evidence Extractor & Bundler"
+  model: "gpt-4o-mini"
+  temperature: 0.1
+  parameters:
+    chunking_strategy: "agentic" # agentic vs fixed
+    embedding_model: "BAAI/bge-large-en-v1.5"
+    top_k_candidates: 15
+    rerank_top_k: 5
+    bundle_context_window: 2

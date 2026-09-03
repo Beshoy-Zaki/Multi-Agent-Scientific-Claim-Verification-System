@@ -1,0 +1,13 @@
+﻿agent:
+  name: "PaperSearchAgent"
+  role: "Adversarial Literature Discovery Agent"
+  model: "gpt-4o-mini"
+  temperature: 0.3
+  parameters:
+    max_queries_per_side: 4
+    search_engines:
+      - semantic_scholar
+      - arxiv
+      - crossref
+    max_papers_per_claim: 5
+    enable_adversarial_queries: true

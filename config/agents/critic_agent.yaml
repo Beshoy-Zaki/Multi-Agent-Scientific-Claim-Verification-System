@@ -1,0 +1,16 @@
+﻿agent:
+  name: "CriticAgent"
+  role: "Scientific Judge, Citation Verifier & Verdict Synthesizer"
+  model: "gpt-4o"
+  temperature: 0.1
+  parameters:
+    verdict_classes:
+      - Supported
+      - Partially Supported
+      - Unsupported
+      - Inconclusive
+    validation_checks:
+      - citation_presence_in_source
+      - premise_conclusion_coherence
+      - domain_transfer_validity
+      - experimental_condition_parity

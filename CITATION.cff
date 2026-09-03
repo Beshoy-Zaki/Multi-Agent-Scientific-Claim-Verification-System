@@ -1,0 +1,9 @@
+﻿cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+authors:
+  - family-names: "Zaki"
+    given-names: "Beshoy"
+title: "Multi-Agent Scientific Claim Verification System (MASCV)"
+version: 0.1.0
+date-released: 2026-09-03
+url: "https://github.com/Beshoy-Zaki/Multi-Agent-Scientific-Claim-Verification-System"

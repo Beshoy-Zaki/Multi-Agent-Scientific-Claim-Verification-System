@@ -1,0 +1,86 @@
+﻿[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mascv"
+version = "0.1.0"
+description = "An Evidence-Grounded Multi-Agent System for Adversarial Analysis of Scientific Claims"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Beshoy Zaki", email = "beshoy.zaki@example.com" }
+]
+keywords = [
+    "multi-agent",
+    "scientific-claim-verification",
+    "rag",
+    "adversarial-reasoning",
+    "information-retrieval",
+    "llm",
+    "nlp"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+dependencies = [
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "langchain>=0.2.0",
+    "langgraph>=0.0.60",
+    "openai>=1.30.0",
+    "anthropic>=0.26.0",
+    "google-generativeai>=0.5.0",
+    "pypdf>=4.2.0",
+    "pdfplumber>=0.11.0",
+    "arxiv>=2.1.0",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=2.7.0",
+    "rank-bm25>=0.2.2",
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "tqdm>=4.66.0",
+    "rich>=13.7.0",
+    "pyyaml>=6.0.1",
+    "streamlit>=1.35.0",
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.4.4",
+    "mypy>=1.10.0",
+    "black>=24.4.2"
+]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0"
+]
+
+[project.scripts]
+mascv = "mascv.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --cov=mascv --cov-report=term-missing"

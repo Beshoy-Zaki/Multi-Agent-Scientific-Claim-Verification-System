@@ -1,0 +1,15 @@
+﻿agent:
+  name: "ClaimAnalystAgent"
+  role: "Scientific Proposition Extractor & Normalizer"
+  model: "gpt-4o-mini"
+  temperature: 0.2
+  parameters:
+    max_claims_to_extract: 10
+    claim_types:
+      - performance
+      - efficiency
+      - causal
+      - generalization
+      - methodological
+      - novelty
+    require_quantitative_metrics: false

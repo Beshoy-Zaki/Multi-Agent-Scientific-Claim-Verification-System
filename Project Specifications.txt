@@ -1,0 +1,2245 @@
+\documentclass[12pt,a4paper]{article}
+
+% --------------------------------------------------
+% Packages
+% --------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{float}
+\usepackage{tikz}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+
+\usetikzlibrary{
+    positioning,
+    arrows.meta,
+    shapes.geometric,
+    fit,
+    backgrounds
+}
+
+% --------------------------------------------------
+% Page setup
+% --------------------------------------------------
+\geometry{
+    left=25mm,
+    right=25mm,
+    top=25mm,
+    bottom=25mm
+}
+
+\onehalfspacing
+
+% Allow LaTeX to stretch whitespace slightly when necessary.
+% This helps prevent unnecessary overfull/underfull boxes.
+\setlength{\emergencystretch}{3em}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+% --------------------------------------------------
+% Header / Footer
+% --------------------------------------------------
+\setlength{\headheight}{15pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Multi-Agent Scientific Claim Verification}
+\rhead{\small Graduation Project}
+\cfoot{\thepage}
+
+% --------------------------------------------------
+% Code style
+% --------------------------------------------------
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    breakatwhitespace=false,
+    frame=single,
+    columns=fullflexible,
+    keepspaces=true
+}
+
+% --------------------------------------------------
+% Custom commands
+% --------------------------------------------------
+\newcommand{\projectname}{Multi-Agent Scientific Claim Verification System}
+\newcommand{\shortname}{MASCV}
+
+% --------------------------------------------------
+% Document
+% --------------------------------------------------
+
+\begin{document}
+
+% ==================================================
+% TITLE PAGE
+% ==================================================
+
+\begin{titlepage}
+\centering
+
+\vspace*{2cm}
+
+{\Large\textbf{Graduation Project Proposal}}
+
+\vspace{1.5cm}
+
+{\Huge\textbf{\projectname}}
+
+\vspace{0.5cm}
+
+{\Large
+An Evidence-Grounded Multi-Agent System for\\
+Adversarial Analysis of Scientific Claims
+}
+
+\vspace{2cm}
+
+\begin{flushleft}
+\textbf{Project Type:} Multi-Agent Artificial Intelligence System\\[0.3cm]
+
+\textbf{Primary Areas:} Large Language Models, Multi-Agent Systems,
+Retrieval-Augmented Generation, Information Retrieval,
+Scientific Literature Analysis\\[0.3cm]
+
+\textbf{Target Users:} Students, researchers, engineers, and
+academics\\[0.3cm]
+
+\textbf{Input:} Research paper in PDF or supported document format\\[0.3cm]
+
+\textbf{Output:} Claim analysis, supporting and contradicting evidence,
+adversarial arguments, critical evaluation, and scientific verdict
+\end{flushleft}
+
+\vfill
+
+{\large
+\today
+}
+
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ==================================================
+\section{Executive Summary}
+% ==================================================
+
+\projectname{} is a multi-agent artificial intelligence system designed to
+analyze and critically evaluate scientific claims made in research papers.
+
+The system accepts a target research paper as input. Rather than simply
+summarizing the paper, it identifies important and testable claims made by
+the authors and investigates whether those claims are supported by the
+broader scientific literature.
+
+For every selected claim, the system searches academic and web sources for
+related papers. These papers may support, contradict, qualify, replicate,
+or otherwise investigate the original claim. The retrieved documents,
+together with the original paper, are processed by an agentic
+Retrieval-Augmented Generation (RAG) component that performs document
+understanding, claim-aware retrieval, evidence extraction, and evidence
+organization.
+
+The resulting evidence is then provided to two adversarial agents. A
+Support Agent constructs the strongest evidence-grounded argument in favor
+of the claim, while an Attack Agent independently investigates how the
+claim could be wrong, overstated, conditional, or methodologically weak.
+
+A Critic Agent evaluates both sides. It checks whether the cited sources
+actually support the arguments, whether the reasoning is valid, whether
+different studies are being compared fairly, and whether the final
+conclusion is stronger than the available evidence.
+
+A Supervisor Agent manages the overall investigation. It maintains the
+state of every claim and determines whether sufficient evidence exists or
+whether another search, retrieval, or analysis cycle is necessary.
+
+The final result is therefore not merely a summary. It is an
+evidence-grounded scientific assessment containing the original claim,
+supporting evidence, contradictory evidence, arguments from both sides,
+critic analysis, confidence, and a final verdict.
+
+% ==================================================
+\section{Introduction}
+% ==================================================
+
+Scientific papers communicate research findings through a combination of
+experimental results, methodological choices, interpretations, and claims.
+A paper may report that a proposed method improves performance, reduces
+computational cost, generalizes to multiple datasets, or provides an
+explanation for an observed phenomenon.
+
+However, reading one paper is not always sufficient to determine how
+strong these claims actually are.
+
+A claim may appear convincing inside the original paper while the broader
+literature contains:
+
+\begin{itemize}
+    \item independent studies that support the result,
+    \item studies that obtain weaker results,
+    \item failed replications,
+    \item studies that identify limitations,
+    \item alternative explanations,
+    \item methodological criticisms,
+    \item results that contradict the original finding,
+    \item evidence that limits the claim to specific experimental conditions.
+\end{itemize}
+
+Consequently, scientific understanding requires more than document
+summarization. It requires comparing evidence across multiple sources and
+evaluating the reasoning connecting evidence to conclusions.
+
+The proposed system addresses this problem through a multi-agent
+architecture in which different agents have explicitly different
+objectives.
+
+The system is designed around the following principle:
+
+\begin{quote}
+\textit{A scientific claim should not only be summarized; it should be
+investigated, challenged, and evaluated against independent evidence.}
+\end{quote}
+
+% ==================================================
+\section{Problem Statement}
+% ==================================================
+
+The central problem addressed by this project is the difficulty of
+automatically determining whether scientific claims in a research paper
+are sufficiently supported by the broader literature.
+
+Traditional paper summarization systems generally answer questions such
+as:
+
+\begin{itemize}
+    \item What problem does the paper address?
+    \item What method does it propose?
+    \item What experiments were performed?
+    \item What were the reported results?
+\end{itemize}
+
+These capabilities are useful but do not directly answer:
+
+\begin{itemize}
+    \item Is the claim supported by independent research?
+    \item Are there papers that contradict the claim?
+    \item Under what conditions does the claim hold?
+    \item Are the reported improvements statistically or experimentally
+    meaningful?
+    \item Are supporting papers actually comparable?
+    \item Are the conclusions stronger than the evidence?
+    \item Are there alternative explanations for the observed results?
+\end{itemize}
+
+The project therefore focuses on \textbf{scientific claim verification and
+adversarial evidence analysis} rather than ordinary paper summarization.
+
+% ==================================================
+\section{Project Motivation}
+% ==================================================
+
+Research literature grows rapidly, making it difficult for a researcher
+to manually investigate every claim across the relevant literature.
+
+A researcher interested in one particular claim may need to perform the
+following process manually:
+
+\begin{enumerate}
+    \item Read the target paper.
+    \item Identify its important claims.
+    \item Search for related papers.
+    \item Read those papers.
+    \item Determine whether they support or contradict the claim.
+    \item Compare experimental settings.
+    \item Find methodological weaknesses.
+    \item Investigate alternative explanations.
+    \item Verify that citations actually support the arguments.
+    \item Decide how strong the overall evidence is.
+\end{enumerate}
+
+This process is time-consuming and requires significant expertise.
+
+The proposed system aims to automate a substantial part of this
+investigation while preserving explicit evidence and source traceability.
+
+The goal is not to replace scientific judgment. Instead, the system acts
+as an automated research assistant that constructs an organized evidence
+base and exposes both supporting and opposing interpretations of a claim.
+
+% ==================================================
+\section{Project Objectives}
+% ==================================================
+
+The primary objectives are:
+
+\begin{enumerate}
+    \item Automatically identify important scientific claims in a target
+    research paper.
+
+    \item Convert vague textual statements into structured and testable
+    propositions.
+
+    \item Search academic and web sources for relevant external literature.
+
+    \item Retrieve evidence from both the original paper and externally
+    discovered papers.
+
+    \item Use claim-aware and agentic retrieval rather than relying only
+    on fixed-size text chunks.
+
+    \item Construct independent supporting and opposing arguments.
+
+    \item Detect contradictions and limitations in the literature.
+
+    \item Verify the relationship between arguments and their cited
+    evidence.
+
+    \item Detect overgeneralization and invalid comparisons.
+
+    \item Iteratively search for additional evidence when the available
+    evidence is insufficient.
+
+    \item Produce a transparent final assessment containing sources and
+    evidence.
+
+    \item Compare the proposed multi-agent architecture against a
+    single-agent baseline.
+\end{enumerate}
+
+% ==================================================
+\section{System Overview}
+% ==================================================
+
+The complete system consists of seven specialized agents:
+
+\begin{enumerate}
+    \item Supervisor Agent
+    \item Claim Analyst
+    \item Paper Search Agent
+    \item RAG / Evidence Agent
+    \item Support Agent
+    \item Attack Agent
+    \item Critic Agent
+\end{enumerate}
+
+The overall workflow is:
+
+\begin{verbatim}
+Target Paper
+    |
+    v
+Supervisor
+    |
+    v
+Claim Analyst
+    |
+    v
+Paper Search Agent
+    |
+    +-------------------------+
+    |                         |
+    v                         v
+Target Paper              Web Papers
+    |                         |
+    +------------+------------+
+                 |
+                 v
+        RAG / Evidence Agent
+                 |
+                 v
+          Evidence Store
+                 |
+          +------+------+
+          |             |
+          v             v
+      Support         Attack
+       Agent           Agent
+          |             |
+          +------+------+
+                 |
+                 v
+              Critic
+                 |
+          +------+------+
+          |             |
+          v             v
+       Verdict       Need More
+                     Evidence
+                         |
+                         v
+                     Supervisor
+\end{verbatim}
+
+The architecture is intentionally not a simple sequential pipeline. The
+system can return to earlier stages when the Critic determines that the
+available evidence is insufficient.
+
+% ==================================================
+\section{Why a Multi-Agent Architecture?}
+% ==================================================
+
+The project does not use multiple agents merely to increase the number of
+LLM calls. Each agent has a different objective and a different
+responsibility.
+
+The central division is:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}
+                >{\raggedright\arraybackslash}p{9.5cm}}
+\toprule
+\textbf{Agent} & \textbf{Core Question} \\
+\midrule
+Supervisor & What should happen next? \\
+Claim Analyst & What exactly are we testing? \\
+Paper Search Agent & What relevant research exists? \\
+RAG / Evidence Agent & What evidence inside these papers is relevant? \\
+Support Agent & Why might the claim be true? \\
+Attack Agent & Why might the claim be wrong or overstated? \\
+Critic Agent & Which evidence and arguments actually hold up? \\
+\bottomrule
+\end{tabular}
+\caption{Responsibilities of the proposed agents}
+\end{table}
+
+The most important multi-agent interaction occurs between the Support,
+Attack, and Critic agents.
+
+The Support Agent is explicitly optimized toward constructing the
+strongest defensible case for a claim.
+
+The Attack Agent is explicitly optimized toward finding evidence and
+reasoning that could invalidate, weaken, or qualify the claim.
+
+The Critic then evaluates both sides.
+
+This creates an adversarial reasoning loop:
+
+\[
+\text{Claim}
+\rightarrow
+\text{Evidence}
+\rightarrow
+\begin{cases}
+\text{Support}\\
+\text{Attack}
+\end{cases}
+\rightarrow
+\text{Critic}
+\rightarrow
+\text{More Investigation or Verdict}
+\]
+
+This decomposition can be experimentally compared against a single-agent
+system.
+
+% ==================================================
+\section{Agent 1: Supervisor Agent}
+% ==================================================
+
+\subsection{Purpose}
+
+The Supervisor Agent manages the investigation and maintains the global
+state of the system.
+
+It is not intended to perform all scientific reasoning itself.
+
+Its main question is:
+
+\begin{quote}
+\textit{What should the system do next?}
+\end{quote}
+
+\subsection{Responsibilities}
+
+The Supervisor maintains the state of each claim, including:
+
+\begin{itemize}
+    \item number of supporting sources,
+    \item number of contradictory sources,
+    \item number of independent studies,
+    \item evidence quality,
+    \item unresolved questions,
+    \item arguments generated,
+    \item criticism results,
+    \item confidence,
+    \item current investigation status.
+\end{itemize}
+
+An example internal state is:
+
+\begin{lstlisting}
+Claim C3
+Evidence found: 8
+Supporting evidence: 5
+Contradicting evidence: 3
+Independent studies: 2
+Evidence quality: Medium
+Arguments evaluated: Yes
+Confidence: 0.62
+Status: Needs more evidence
+\end{lstlisting}
+
+\subsection{Decision Making}
+
+The Supervisor may decide to:
+
+\begin{itemize}
+    \item perform another literature search,
+    \item retrieve more evidence from an existing paper,
+    \item request an independent replication search,
+    \item ask the Attack Agent to investigate a contradiction,
+    \item ask the Support Agent to strengthen an argument,
+    \item send the current investigation to the Critic,
+    \item finalize a claim.
+\end{itemize}
+
+The Supervisor therefore creates an adaptive workflow rather than a
+strictly predetermined sequence.
+
+\subsection{Why the Supervisor is Needed}
+
+Without a Supervisor, the system could become a fixed pipeline where every
+claim always passes through exactly the same sequence.
+
+Scientific investigation is not always predictable. Some claims may have
+abundant evidence, while others may require additional searches.
+
+The Supervisor allows the system to respond to the current state of the
+investigation.
+
+% ==================================================
+\section{Agent 2: Claim Analyst}
+% ==================================================
+
+\subsection{Purpose}
+
+The Claim Analyst determines what the target paper is actually claiming.
+
+A research paper contains many statements, but not every statement should
+be investigated.
+
+The Claim Analyst extracts claims that are meaningful, testable, and
+relevant to the paper's contribution.
+
+\subsection{Example}
+
+Suppose a paper states:
+
+\begin{quote}
+``Our proposed architecture achieves state-of-the-art performance on
+three benchmark datasets.''
+\end{quote}
+
+The Claim Analyst transforms this into a structured proposition:
+
+\begin{lstlisting}
+Claim ID: C7
+
+Subject:
+Proposed architecture
+
+Claim:
+Achieves state-of-the-art performance
+
+Benchmarks:
+Dataset A
+Dataset B
+Dataset C
+
+Metric:
+Accuracy
+
+Comparison:
+Previous state-of-the-art methods
+
+Conditions:
+Authors' experimental setup
+\end{lstlisting}
+
+\subsection{Claim Types}
+
+The agent can classify claims into categories such as:
+
+\begin{itemize}
+    \item performance claims,
+    \item efficiency claims,
+    \item causal claims,
+    \item generalization claims,
+    \item methodological claims,
+    \item novelty claims.
+\end{itemize}
+
+For example:
+
+\begin{itemize}
+    \item Performance: ``Method X improves accuracy.''
+    \item Efficiency: ``Method X reduces computational cost.''
+    \item Causal: ``Component X causes the observed improvement.''
+    \item Generalization: ``Method X works across different domains.''
+\end{itemize}
+
+This structured representation is essential because evidence retrieval
+depends on the exact proposition being investigated.
+
+% ==================================================
+\section{Agent 3: Paper Search Agent}
+% ==================================================
+
+\subsection{Purpose}
+
+The Paper Search Agent is responsible for discovering external literature
+related to the claims extracted from the target paper.
+
+Its core question is:
+
+\begin{quote}
+\textit{What other research exists about this claim?}
+\end{quote}
+
+\subsection{Search Strategy}
+
+The agent does not rely on one search query.
+
+For a claim such as:
+
+\begin{quote}
+``Method X improves reasoning performance.''
+\end{quote}
+
+it may generate multiple search objectives:
+
+\begin{lstlisting}
+"Method X" reasoning performance
+"Method X" benchmark results
+"Method X" limitations
+"Method X" replication
+"Method X" failure
+"Method X" comparison
+"Method X" alternative
+\end{lstlisting}
+
+The search agent can use appropriate academic and web search sources.
+
+\subsection{Adversarial Search}
+
+A major feature of the search agent is that it should search from both
+sides of a claim.
+
+For supporting evidence:
+
+\begin{lstlisting}
+"X improves"
+"X outperforms"
+"X effectiveness"
+"X replication"
+\end{lstlisting}
+
+For contradictory evidence:
+
+\begin{lstlisting}
+"X limitations"
+"X fails"
+"X no improvement"
+"X critique"
+"X benchmark problems"
+\end{lstlisting}
+
+This is important because searching only for confirming evidence can
+create confirmation bias.
+
+\subsection{Output}
+
+The Paper Search Agent returns candidate papers, metadata, and relevance
+information.
+
+It does not perform deep evidence analysis. Its responsibility is
+literature discovery.
+
+The RAG / Evidence Agent is responsible for determining what information
+inside those papers is actually useful.
+
+% ==================================================
+\section{Agent 4: RAG / Evidence Agent}
+% ==================================================
+
+\subsection{Purpose}
+
+The RAG / Evidence Agent processes both the original target paper and the
+externally discovered papers.
+
+Its core question is:
+
+\begin{quote}
+\textit{What evidence inside these documents is relevant to the claim?}
+\end{quote}
+
+This component combines Retrieval-Augmented Generation with agentic
+document processing.
+
+\subsection{Responsibilities}
+
+The RAG / Evidence Agent performs:
+
+\begin{itemize}
+    \item document parsing,
+    \item document structural analysis,
+    \item candidate evidence identification,
+    \item agentic or claim-aware chunking,
+    \item embeddings,
+    \item retrieval,
+    \item reranking,
+    \item evidence extraction,
+    \item evidence bundling.
+\end{itemize}
+
+\subsection{Processing Both Target and External Papers}
+
+The system should use the same evidence-processing pipeline for:
+
+\begin{enumerate}
+    \item the target paper,
+    \item papers discovered by the Paper Search Agent.
+\end{enumerate}
+
+Conceptually:
+
+\begin{verbatim}
+Documents
+    |
+    +----------+----------+
+    |                     |
+Target Paper          External Papers
+    |                     |
+    +----------+----------+
+               |
+               v
+          RAG Agent
+               |
+       +-------+-------+
+       |       |       |
+      Parse  Chunk  Structure
+       |       |       |
+       +-------+-------+
+               |
+               v
+     Claim-aware Retrieval
+               |
+               v
+            Reranking
+               |
+               v
+       Evidence Extraction
+               |
+               v
+         Evidence Bundles
+\end{verbatim}
+
+% ==================================================
+\subsection{Agentic Chunking}
+% ==================================================
+
+Traditional RAG systems often split documents using fixed token sizes.
+
+For example:
+
+\begin{verbatim}
+500 tokens -> Chunk 1
+500 tokens -> Chunk 2
+500 tokens -> Chunk 3
+...
+\end{verbatim}
+
+This can be problematic for scientific papers because important evidence
+may span multiple sections.
+
+For example, a scientific claim may depend on:
+
+\begin{itemize}
+    \item a method description,
+    \item an experimental setup,
+    \item a result table,
+    \item a paragraph interpreting the result,
+    \item a limitation in the discussion.
+\end{itemize}
+
+The proposed system therefore uses claim-aware or agentic evidence
+retrieval.
+
+Given a claim such as:
+
+\begin{quote}
+``Method X improves accuracy over Method Y.''
+\end{quote}
+
+the agent can determine that the investigation requires:
+
+\begin{itemize}
+    \item the description of Method X,
+    \item the baseline Method Y,
+    \item the experimental setup,
+    \item the dataset,
+    \item the reported accuracy,
+    \item statistical information where available,
+    \item independent replications.
+\end{itemize}
+
+Instead of returning arbitrary chunks, the system constructs an
+\textbf{evidence bundle}.
+
+\subsection{Evidence Bundle}
+
+An evidence bundle may have the following structure:
+
+\begin{lstlisting}
+Evidence ID: E17
+
+Claim:
+Method X improves accuracy.
+
+Source:
+Paper B
+
+Evidence:
+Table 3 reports X = 84.2% and Y = 79.1%.
+
+Context:
+Dataset = CIFAR-100
+Training budget = 200 epochs
+Metric = Accuracy
+
+Location:
+Page 7, Table 3
+
+Relationship:
+SUPPORTS
+\end{lstlisting}
+
+The system can combine multiple related sections into one evidence unit.
+
+Thus, the important concept is not merely dynamic chunking, but
+\textbf{claim-aware evidence assembly}.
+
+% ==================================================
+\section{Evidence Store}
+% ==================================================
+
+All extracted evidence is stored in a structured evidence repository.
+
+The evidence store acts as the shared state between the research agents.
+
+A conceptual representation is:
+
+\begin{lstlisting}
+Claim
+|
++-- Evidence
+|     |
+|     +-- Source
+|     +-- Location
+|     +-- Evidence type
+|     +-- Relationship
+|     +-- Experimental context
+|
++-- Supporting papers
+|
++-- Contradicting papers
+|
++-- Replications
+|
++-- Arguments
+\end{lstlisting}
+
+An evidence record may contain:
+
+\begin{itemize}
+    \item evidence ID,
+    \item claim ID,
+    \item source paper,
+    \item page or section,
+    \item text or structured result,
+    \item evidence type,
+    \item relationship to claim,
+    \item experimental conditions,
+    \item confidence,
+    \item provenance information.
+\end{itemize}
+
+The evidence store is important because agents should communicate through
+structured evidence rather than repeatedly passing entire documents or
+unstructured conversations.
+
+% ==================================================
+\section{Agent 5: Support Agent}
+% ==================================================
+
+\subsection{Purpose}
+
+The Support Agent constructs the strongest defensible case that a claim is
+true.
+
+Its central question is:
+
+\begin{quote}
+\textit{Why might this claim be true?}
+\end{quote}
+
+\subsection{Responsibilities}
+
+The agent considers:
+
+\begin{itemize}
+    \item strong supporting studies,
+    \item independent replications,
+    \item consistency between studies,
+    \item methodological support,
+    \item conditions under which the claim holds.
+\end{itemize}
+
+Example:
+
+\begin{lstlisting}
+Claim C1
+
+Argument FOR:
+
+1. Paper A independently reproduced the improvement.
+2. Paper B observed the same trend on another dataset.
+3. An ablation study suggests that component X
+   contributes significantly to the improvement.
+
+Strength:
+Strong
+
+Limitation:
+Evidence is concentrated around benchmark family Y.
+\end{lstlisting}
+
+The Support Agent is not expected to simply summarize positive evidence.
+It must construct a logically connected argument where important
+statements are grounded in evidence.
+
+% ==================================================
+\section{Agent 6: Attack Agent}
+% ==================================================
+
+\subsection{Purpose}
+
+The Attack Agent investigates how the claim could be wrong, overstated,
+conditional, or methodologically weak.
+
+Its central question is:
+
+\begin{quote}
+\textit{Why might this claim be wrong or weaker than it appears?}
+\end{quote}
+
+It is therefore more than a ``devil's advocate.''
+
+\subsection{Attack Dimensions}
+
+The agent can investigate:
+
+\begin{itemize}
+    \item contradictory experimental results,
+    \item failed replications,
+    \item methodological weaknesses,
+    \item dataset bias,
+    \item benchmark contamination,
+    \item alternative explanations,
+    \item statistical weaknesses,
+    \item overgeneralization,
+    \item hidden experimental conditions,
+    \item weak or misleading citations.
+\end{itemize}
+
+For example, suppose the original paper claims:
+
+\begin{quote}
+``Method X is better than Method Y.''
+\end{quote}
+
+The Attack Agent may discover:
+
+\begin{quote}
+``The reported improvement only occurs when Method X receives
+substantially more training computation.''
+\end{quote}
+
+The claim may therefore need to be qualified.
+
+\subsection{Independent Investigation}
+
+The Attack Agent should be capable of requesting or performing additional
+searches when the existing evidence does not provide sufficient
+counter-evidence.
+
+This is important because the Attack Agent should not merely criticize
+the evidence selected by the Support Agent.
+
+It should be able to investigate the literature independently.
+
+% ==================================================
+\section{Agent 7: Critic Agent}
+% ==================================================
+
+\subsection{Purpose}
+
+The Critic Agent acts as the scientific judge of the investigation.
+
+Its central question is:
+
+\begin{quote}
+\textit{Which evidence and arguments actually hold up?}
+\end{quote}
+
+It receives:
+
+\begin{itemize}
+    \item the original claim,
+    \item evidence from the target paper,
+    \item external evidence,
+    \item the Support Agent's argument,
+    \item the Attack Agent's argument,
+    \item source and provenance information.
+\end{itemize}
+
+\subsection{Evidence Validation}
+
+The Critic checks whether a source actually supports what an agent says.
+
+For example:
+
+\begin{quote}
+Support Agent: ``Paper A proves Method X is superior.''
+\end{quote}
+
+The Critic may discover that Paper A used a different dataset.
+
+It can therefore classify the argument as only partially supported.
+
+\subsection{Citation Validation}
+
+The Critic checks whether:
+
+\begin{itemize}
+    \item the cited paper is relevant,
+    \item the cited passage contains the claimed evidence,
+    \item tables and figures are interpreted correctly,
+    \item the source is being used in the correct context.
+\end{itemize}
+
+\subsection{Reasoning Validation}
+
+The Critic checks for logical overreach.
+
+For example:
+
+\begin{lstlisting}
+Evidence:
+X performs better than Y on Dataset A.
+
+Argument:
+X is universally better than Y.
+
+Critic:
+Invalid generalization.
+\end{lstlisting}
+
+\subsection{Comparison Validation}
+
+Different studies may appear contradictory while actually using different:
+
+\begin{itemize}
+    \item datasets,
+    \item training budgets,
+    \item model sizes,
+    \item evaluation metrics,
+    \item experimental conditions.
+\end{itemize}
+
+The Critic therefore evaluates whether comparisons between studies are
+legitimate.
+
+% ==================================================
+\section{Final Verdict}
+% ==================================================
+
+The Critic can produce a final assessment such as:
+
+\begin{itemize}
+    \item Supported
+    \item Partially Supported
+    \item Unsupported
+    \item Inconclusive
+\end{itemize}
+
+The verdict should contain:
+
+\begin{lstlisting}
+Claim:
+Method X improves reasoning performance.
+
+Verdict:
+Partially Supported
+
+Confidence:
+0.74
+
+Supporting Evidence:
+Paper A
+Paper B
+Paper C
+
+Contradicting Evidence:
+Paper D
+Paper E
+
+Key Issue:
+Improvement is consistent on benchmark X,
+but evidence on other benchmarks is mixed.
+
+Strongest Supporting Argument:
+...
+
+Strongest Counterargument:
+...
+
+Critic Assessment:
+The original claim appears stronger than
+what the broader literature supports.
+
+Final Assessment:
+Supported under specific experimental conditions.
+General superiority is not established.
+\end{lstlisting}
+
+Every important evidence statement should retain a link to its source.
+
+% ==================================================
+\section{Iterative Investigation Loop}
+% ==================================================
+
+The system is designed to support iterative investigation rather than
+always following one fixed path.
+
+The core loop is:
+
+\[
+\text{Claim}
+\rightarrow
+\text{Search}
+\rightarrow
+\text{Evidence Retrieval}
+\rightarrow
+\text{Support/Attack}
+\rightarrow
+\text{Critic}
+\]
+
+The Critic may determine that the evidence is insufficient.
+
+In that case:
+
+\[
+\text{Critic}
+\rightarrow
+\text{Supervisor}
+\rightarrow
+\text{Additional Search}
+\rightarrow
+\text{Additional Retrieval}
+\rightarrow
+\text{Critic}
+\]
+
+For example:
+
+\begin{lstlisting}
+Claim C3
+
+Supporting studies: 5
+Contradicting studies: 1
+Independent replications: 0
+
+Critic:
+Evidence insufficient to establish generality.
+
+Supervisor:
+Request independent replication search.
+
+Paper Search Agent:
+Search for independent replication.
+
+RAG Agent:
+Extract relevant evidence.
+
+Attack Agent:
+Evaluate newly discovered evidence.
+
+Critic:
+Re-evaluate claim.
+\end{lstlisting}
+
+This feedback mechanism is one of the main characteristics that makes the
+system agentic.
+
+% ==================================================
+\section{Complete System Architecture}
+% ==================================================
+
+The complete conceptual architecture is shown below.
+
+\begin{figure}[H]
+\centering
+
+% The resizebox guarantees that the architecture stays inside
+% the available page width and prevents large overfull boxes.
+\resizebox{0.92\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=8mm and 12mm,
+    agent/.style={
+        rectangle,
+        rounded corners,
+        draw,
+        align=center,
+        minimum width=3.4cm,
+        minimum height=1cm
+    },
+    data/.style={
+        rectangle,
+        draw,
+        align=center,
+        minimum width=3.4cm,
+        minimum height=0.9cm
+    },
+    arrow/.style={
+        -{Latex[length=2mm]},
+        thick
+    }
+]
+
+\node[agent] (supervisor) {Supervisor\\Agent};
+
+\node[agent, below=of supervisor] (claim)
+{Claim\\Analyst};
+
+\node[agent, below=of claim] (search)
+{Paper Search\\Agent};
+
+\node[data, below=of search] (papers)
+{Target Paper +\\External Papers};
+
+\node[agent, below=of papers] (rag)
+{RAG / Evidence\\Agent};
+
+\node[data, below=of rag] (store)
+{Evidence Store};
+
+\node[agent, below left=12mm and 10mm of store] (support)
+{Support\\Agent};
+
+\node[agent, below right=12mm and 10mm of store] (attack)
+{Attack\\Agent};
+
+\node[agent, below=18mm of store] (critic)
+{Critic\\Agent};
+
+\node[data, below=of critic] (verdict)
+{Final Verdict /\\Scientific Report};
+
+\draw[arrow] (supervisor) -- (claim);
+\draw[arrow] (claim) -- (search);
+\draw[arrow] (search) -- (papers);
+\draw[arrow] (papers) -- (rag);
+\draw[arrow] (rag) -- (store);
+
+\draw[arrow] (store) -- (support);
+\draw[arrow] (store) -- (attack);
+
+\draw[arrow] (support) -- (critic);
+\draw[arrow] (attack) -- (critic);
+
+\draw[arrow] (critic) -- (verdict);
+
+\draw[arrow]
+    (critic.east)
+    -- ++(2.5,0)
+    |- node[pos=0.25,right,align=center]
+    {Insufficient\\evidence}
+    (supervisor.east);
+
+\end{tikzpicture}%
+}
+
+\caption{Conceptual architecture of the proposed multi-agent scientific
+claim verification system.}
+\end{figure}
+
+% ==================================================
+\section{System Functionality}
+% ==================================================
+
+The complete user-facing workflow can be divided into the following
+stages.
+
+\subsection{Stage 1: Paper Upload}
+
+The user provides a research paper.
+
+Possible input formats include:
+
+\begin{itemize}
+    \item PDF,
+    \item supported digital academic documents,
+    \item optionally a paper repository URL or related source.
+\end{itemize}
+
+\subsection{Stage 2: Paper Understanding}
+
+The system parses the document and identifies its structure, including:
+
+\begin{itemize}
+    \item abstract,
+    \item introduction,
+    \item related work,
+    \item methodology,
+    \item experiments,
+    \item results,
+    \item discussion,
+    \item limitations,
+    \item appendix.
+\end{itemize}
+
+\subsection{Stage 3: Claim Extraction}
+
+The Claim Analyst identifies important scientific claims.
+
+Each claim receives a unique identifier.
+
+\subsection{Stage 4: Literature Discovery}
+
+For each claim, the Paper Search Agent generates appropriate search
+queries and searches for relevant literature.
+
+\subsection{Stage 5: Evidence Retrieval}
+
+The RAG / Evidence Agent processes the target paper and external papers.
+
+It retrieves the sections, paragraphs, tables, figures, and experimental
+information needed to evaluate the claim.
+
+\subsection{Stage 6: Evidence Organization}
+
+Evidence is stored with provenance and relationships such as:
+
+\begin{itemize}
+    \item SUPPORTS,
+    \item CONTRADICTS,
+    \item QUALIFIES,
+    \item REPLICATES,
+    \item PROVIDES\_ALTERNATIVE\_EXPLANATION.
+\end{itemize}
+
+\subsection{Stage 7: Adversarial Analysis}
+
+The Support Agent constructs the strongest case for the claim.
+
+The Attack Agent constructs the strongest case against it.
+
+\subsection{Stage 8: Critical Evaluation}
+
+The Critic validates the evidence, citations, comparisons, and reasoning.
+
+\subsection{Stage 9: Additional Investigation}
+
+If evidence is insufficient, the Supervisor triggers another investigation
+cycle.
+
+\subsection{Stage 10: Final Report}
+
+The system produces a structured scientific assessment.
+
+% ==================================================
+\section{Example End-to-End Scenario}
+% ==================================================
+
+Consider a hypothetical paper claiming:
+
+\begin{quote}
+``Method X significantly improves reasoning performance compared with
+previous approaches.''
+\end{quote}
+
+The system processes the claim as follows.
+
+\subsection{Claim Analyst}
+
+It formalizes the claim:
+
+\begin{lstlisting}
+Subject:
+Method X
+
+Claim:
+Method X improves reasoning performance.
+
+Comparison:
+Previous approaches
+
+Evaluation:
+Reasoning benchmarks
+\end{lstlisting}
+
+\subsection{Paper Search Agent}
+
+It searches for:
+
+\begin{lstlisting}
+Method X reasoning benchmark
+Method X comparison
+Method X replication
+Method X limitations
+Method X failure
+Method X no improvement
+\end{lstlisting}
+
+It discovers several papers.
+
+\subsection{RAG Agent}
+
+The agent processes those papers and extracts evidence such as:
+
+\begin{itemize}
+    \item reported improvements,
+    \item experimental conditions,
+    \item benchmark results,
+    \item failed replications,
+    \item limitations.
+\end{itemize}
+
+\subsection{Support Agent}
+
+It identifies three independent studies supporting the improvement.
+
+\subsection{Attack Agent}
+
+It identifies two studies where the improvement is substantially smaller
+and another study showing no significant improvement under different
+conditions.
+
+\subsection{Critic Agent}
+
+The Critic determines that the supporting studies primarily use one
+benchmark family, while contradictory studies use different evaluation
+conditions.
+
+The final verdict may therefore be:
+
+\begin{quote}
+\textbf{Partially Supported.} The evidence supports an improvement under
+specific benchmark and experimental conditions, but the available
+literature does not establish that Method X provides a general improvement
+across all reasoning settings.
+\end{quote}
+
+This demonstrates the intended behavior of the system.
+
+% ==================================================
+\section{Agent Communication and Shared State}
+% ==================================================
+
+The agents should not communicate only through free-form natural language.
+Important information should be represented in structured state.
+
+A simplified claim object may contain:
+
+\begin{lstlisting}
+{
+  "claim_id": "C3",
+  "claim_text": "...",
+  "claim_type": "performance",
+  "status": "under_investigation",
+  "supporting_evidence": [],
+  "contradicting_evidence": [],
+  "support_arguments": [],
+  "attack_arguments": [],
+  "critic_findings": [],
+  "confidence": 0.0
+}
+\end{lstlisting}
+
+This allows the Supervisor to understand the current investigation state
+without relying on the entire conversation history.
+
+The evidence store acts as a shared memory layer.
+
+% ==================================================
+\section{RAG Architecture}
+% ==================================================
+
+The RAG component is not simply a vector database.
+
+Its conceptual architecture is:
+
+\begin{verbatim}
+Claim
+    |
+    v
+Retrieval Objective
+    |
+    v
+Candidate Documents
+    |
+    v
+Structural Analysis
+    |
+    v
+Candidate Evidence Units
+    |
+    v
+Claim-aware Retrieval
+    |
+    v
+Reranking
+    |
+    v
+Evidence Extraction
+    |
+    v
+Evidence Bundles
+\end{verbatim}
+
+Traditional RAG generally follows:
+
+\[
+\text{Query}
+\rightarrow
+\text{Retrieve Chunks}
+\rightarrow
+\text{LLM}
+\]
+
+The proposed system aims for:
+
+\[
+\text{Claim}
+\rightarrow
+\text{Determine Required Evidence}
+\rightarrow
+\text{Retrieve}
+\rightarrow
+\text{Combine Context}
+\rightarrow
+\text{Validate}
+\rightarrow
+\text{Evidence Bundle}
+\]
+
+This makes retrieval more closely aligned with the scientific verification
+task.
+
+% ==================================================
+\section{Web Search and Academic Search}
+% ==================================================
+
+The Paper Search Agent is responsible for discovering external research.
+
+The architecture intentionally separates:
+
+\begin{enumerate}
+    \item \textbf{document discovery}, and
+    \item \textbf{evidence retrieval}.
+\end{enumerate}
+
+The Paper Search Agent answers:
+
+\begin{quote}
+``Which papers should we investigate?''
+\end{quote}
+
+The RAG / Evidence Agent answers:
+
+\begin{quote}
+``What evidence inside these papers is relevant to the claim?''
+\end{quote}
+
+This separation avoids creating one overly broad agent responsible for
+searching, reading, reasoning, and judging simultaneously.
+
+% ==================================================
+\section{Evidence Relationships}
+% ==================================================
+
+Each piece of evidence should be classified relative to the investigated
+claim.
+
+Possible relationships include:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{4cm}
+                >{\raggedright\arraybackslash}p{8.5cm}}
+\toprule
+\textbf{Relationship} & \textbf{Meaning} \\
+\midrule
+SUPPORTS & Evidence provides direct or indirect support for the claim. \\
+CONTRADICTS & Evidence conflicts with the claim under comparable conditions. \\
+QUALIFIES & Evidence suggests the claim is true only under specific conditions. \\
+REPLICATES & Independent research obtains a similar result. \\
+CHALLENGES & Evidence raises methodological or conceptual concerns. \\
+ALTERNATIVE & Evidence provides another explanation for the observed result. \\
+\bottomrule
+\end{tabular}
+\caption{Possible evidence relationships}
+\end{table}
+
+This allows the final report to represent scientific uncertainty more
+accurately than a simple true/false classification.
+
+% ==================================================
+\section{Final Report Generated by the System}
+% ==================================================
+
+The final report can contain the following sections:
+
+\begin{enumerate}
+    \item Target paper information
+    \item Executive summary
+    \item Extracted claims
+    \item Claim-by-claim analysis
+    \item Supporting literature
+    \item Contradicting literature
+    \item Replication evidence
+    \item Support argument
+    \item Attack argument
+    \item Critic assessment
+    \item Evidence quality
+    \item Confidence
+    \item Final verdict
+    \item Open questions
+\end{enumerate}
+
+For every important conclusion, the report should provide source
+provenance.
+
+% ==================================================
+\section{Evaluation Methodology}
+% ==================================================
+
+A major requirement of the project is to demonstrate that the multi-agent
+architecture provides value beyond simply using one strong LLM.
+
+Therefore, the system should be evaluated against appropriate baselines.
+
+\subsection{Baseline 1: Single-Agent System}
+
+A single strong agent receives:
+
+\begin{itemize}
+    \item the target paper,
+    \item access to search,
+    \item retrieved evidence.
+\end{itemize}
+
+It is asked to perform the complete claim verification task.
+
+The proposed multi-agent system is then compared against this baseline.
+
+\subsection{Baseline 2: Standard RAG}
+
+A conventional RAG system using fixed-size or semantic chunks can be
+compared with the claim-aware RAG component.
+
+\subsection{Proposed System}
+
+The full system contains:
+
+\begin{itemize}
+    \item Claim Analyst,
+    \item Paper Search Agent,
+    \item RAG / Evidence Agent,
+    \item Support Agent,
+    \item Attack Agent,
+    \item Critic Agent,
+    \item Supervisor.
+\end{itemize}
+
+% ==================================================
+\section{Evaluation Metrics}
+% ==================================================
+
+The project can be evaluated using several measurable metrics.
+
+\subsection{Claim Verification Accuracy}
+
+Measure whether the system's final verdict agrees with expert judgments
+or a carefully constructed evaluation set.
+
+\subsection{Evidence Retrieval Quality}
+
+Measure whether retrieved evidence is actually relevant to the claim.
+
+Possible metrics include:
+
+\begin{itemize}
+    \item precision,
+    \item recall,
+    \item relevance rate,
+    \item evidence sufficiency.
+\end{itemize}
+
+\subsection{Citation Correctness}
+
+Measure whether claims made by the system are actually supported by the
+cited source.
+
+\subsection{Contradiction Detection}
+
+Measure how effectively the system identifies literature that genuinely
+contradicts or weakens the target claim.
+
+\subsection{Argument Quality}
+
+Evaluate the quality of Support and Attack arguments.
+
+\subsection{Overgeneralization Detection}
+
+Measure the system's ability to identify when a paper's conclusion is
+stronger than the evidence justifies.
+
+\subsection{Human Intervention}
+
+Measure how often a human must intervene before a useful verdict is
+produced.
+
+\subsection{Cost}
+
+Measure the total inference cost per investigated paper or claim.
+
+This is especially important because multi-agent systems can require
+multiple model calls.
+
+\subsection{Latency}
+
+Measure:
+
+\begin{itemize}
+    \item time to process a paper,
+    \item time per claim,
+    \item search time,
+    \item retrieval time,
+    \item final report generation time.
+\end{itemize}
+
+% ==================================================
+\section{Ablation Studies}
+% ==================================================
+
+Ablation studies are important to determine which components actually
+contribute to system performance.
+
+Potential experiments include:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{5cm}
+                >{\raggedright\arraybackslash}p{7.5cm}}
+\toprule
+\textbf{System} & \textbf{Purpose} \\
+\midrule
+Single LLM & Baseline reasoning capability \\
+Single Agent + Search & Measures benefit of external literature \\
+Single Agent + RAG & Measures benefit of retrieved evidence \\
+Standard Chunking RAG & Baseline retrieval strategy \\
+Claim-aware RAG & Measures benefit of claim-aware retrieval \\
+Support + Attack & Measures adversarial reasoning \\
+Support + Attack + Critic & Measures critical validation \\
+Full Multi-Agent System & Complete proposed architecture \\
+\bottomrule
+\end{tabular}
+\caption{Potential experimental configurations}
+\end{table}
+
+The main research question is not whether more agents produce more text.
+
+Instead, it is whether specialized decomposition improves measurable
+scientific claim verification outcomes.
+
+% ==================================================
+\section{Research Questions}
+% ==================================================
+
+The project can be evaluated around the following research questions.
+
+\subsection{RQ1}
+
+\textbf{Can a multi-agent system verify scientific claims more reliably
+than a single-agent system with equivalent access to literature and
+retrieval tools?}
+
+\subsection{RQ2}
+
+\textbf{Does claim-aware agentic evidence retrieval improve evidence
+quality compared with fixed-size or conventional semantic chunking?}
+
+\subsection{RQ3}
+
+\textbf{Does adversarial reasoning between independent Support and Attack
+agents improve detection of unsupported or overstated scientific claims?}
+
+\subsection{RQ4}
+
+\textbf{Does a Critic Agent reduce citation errors, invalid reasoning, and
+overgeneralization in automatically generated scientific assessments?}
+
+\subsection{RQ5}
+
+\textbf{Can the system perform this investigation within practical
+consumer-grade compute and inference-cost constraints?}
+
+% ==================================================
+\section{Why the Project is Not Simply ``RAG + Agents''}
+% ==================================================
+
+A central concern with multi-agent projects is that agents may be added
+without providing a meaningful architectural advantage.
+
+This project attempts to avoid that problem through explicit functional
+separation.
+
+A simple system might perform:
+
+\[
+\text{Paper}
+\rightarrow
+\text{LLM}
+\rightarrow
+\text{Summary}
+\]
+
+A conventional RAG system might perform:
+
+\[
+\text{Paper}
+\rightarrow
+\text{Chunks}
+\rightarrow
+\text{Retriever}
+\rightarrow
+\text{LLM}
+\]
+
+The proposed system instead performs:
+
+\[
+\text{Paper}
+\rightarrow
+\text{Claims}
+\rightarrow
+\text{Independent Literature Discovery}
+\rightarrow
+\text{Claim-Aware Evidence Retrieval}
+\rightarrow
+\text{Adversarial Analysis}
+\rightarrow
+\text{Critical Validation}
+\rightarrow
+\text{Adaptive Investigation}
+\rightarrow
+\text{Verdict}
+\]
+
+The agents have competing or complementary objectives:
+
+\begin{itemize}
+    \item Search Agent maximizes relevant literature discovery.
+    \item Support Agent maximizes the strongest defensible supporting case.
+    \item Attack Agent maximizes discovery of weaknesses and contradictions.
+    \item Critic Agent minimizes unsupported reasoning.
+    \item Supervisor manages uncertainty and determines when additional
+    investigation is necessary.
+\end{itemize}
+
+This provides a measurable basis for evaluating whether the decomposition
+is useful.
+
+% ==================================================
+\section{Expected Challenges}
+% ==================================================
+
+The project contains several significant technical challenges.
+
+\subsection{Claim Extraction}
+
+Scientific claims can be ambiguous or spread across multiple sections.
+
+\subsection{Evidence Retrieval}
+
+The relevant evidence may not be located in the same paragraph as the
+claim.
+
+\subsection{Cross-Paper Comparison}
+
+Two papers may report apparently conflicting results under substantially
+different conditions.
+
+\subsection{Citation Reliability}
+
+An LLM may produce an argument that sounds reasonable but is not actually
+supported by its citation.
+
+\subsection{Search Quality}
+
+Poor search queries can lead to incomplete or biased literature.
+
+\subsection{Confirmation Bias}
+
+If the system only searches for evidence that agrees with the original
+paper, the resulting verdict becomes unreliable.
+
+The independent Attack Agent is intended to address this issue.
+
+\subsection{Inference Cost}
+
+Seven agents do not imply seven times the quality. Excessive agent
+interaction can increase latency and cost.
+
+Therefore, the system should minimize unnecessary agent calls.
+
+\subsection{Evaluation}
+
+Evaluating scientific reasoning is more difficult than evaluating simple
+question answering.
+
+Expert-labeled claims and evidence relationships may therefore be needed
+for a reliable benchmark.
+
+% ==================================================
+\section{Compute and Practicality Considerations}
+% ==================================================
+
+The system is intended to operate on consumer-grade hardware and
+practical API budgets.
+
+The architecture should avoid unnecessary use of expensive models.
+
+Potential strategies include:
+
+\begin{itemize}
+    \item using smaller models for document preprocessing,
+    \item using embeddings for inexpensive retrieval,
+    \item using stronger models only for difficult reasoning stages,
+    \item caching processed papers,
+    \item avoiding repeated processing of the same document,
+    \item limiting additional search cycles,
+    \item storing structured evidence instead of repeatedly passing full
+    papers to agents.
+\end{itemize}
+
+The system should measure both cost and latency.
+
+The multi-agent architecture should only be considered successful if the
+quality improvements justify its additional computational cost.
+
+% ==================================================
+\section{Failure Handling}
+% ==================================================
+
+The system should explicitly handle failure cases.
+
+Examples include:
+
+\begin{itemize}
+    \item no relevant papers found,
+    \item papers inaccessible,
+    \item PDF parsing failure,
+    \item contradictory experimental settings,
+    \item insufficient evidence,
+    \item unreliable citation,
+    \item search results dominated by the original paper,
+    \item duplicate papers,
+    \item conflicting metadata,
+    \item agent disagreement.
+\end{itemize}
+
+Rather than forcing a binary answer, the system should be capable of
+returning:
+
+\begin{quote}
+\textbf{Inconclusive:} insufficient reliable evidence was found to support
+or reject the claim.
+\end{quote}
+
+This is preferable to producing a confident but unsupported verdict.
+
+% ==================================================
+\section{Transparency and Provenance}
+% ==================================================
+
+A major design requirement is that the system should preserve the
+relationship between:
+
+\[
+\text{Claim}
+\rightarrow
+\text{Argument}
+\rightarrow
+\text{Evidence}
+\rightarrow
+\text{Source}
+\]
+
+For example:
+
+\begin{verbatim}
+Claim C4
+|
++-- Argument A2
+|
++-- Evidence E14
+|      |
+|      +-- Paper B
+|      +-- Page 8
+|      +-- Table 3
+|
++-- Evidence E19
+|
++-- Paper C
++-- Section 4
+\end{verbatim}
+
+This allows a user to inspect why the system reached a particular
+conclusion.
+
+% ==================================================
+\section{Potential User Interface}
+% ==================================================
+
+A possible interface can contain the following sections.
+
+\subsection{Paper Overview}
+
+Displays:
+
+\begin{itemize}
+    \item title,
+    \item authors,
+    \item publication information,
+    \item abstract,
+    \item high-level summary.
+\end{itemize}
+
+\subsection{Claims Dashboard}
+
+Displays each extracted claim:
+
+\begin{verbatim}
+Claim C1     Supported
+Claim C2     Partially Supported
+Claim C3     Inconclusive
+Claim C4     Unsupported
+\end{verbatim}
+
+\subsection{Evidence View}
+
+Selecting a claim displays:
+
+\begin{itemize}
+    \item supporting papers,
+    \item contradicting papers,
+    \item qualifying papers,
+    \item evidence passages,
+    \item tables or figures where relevant.
+\end{itemize}
+
+\subsection{Debate View}
+
+The user can inspect:
+
+\begin{verbatim}
+SUPPORT AGENT
+|
+v
+Argument + Evidence
+
+ATTACK AGENT
+|
+v
+Counterargument + Evidence
+
+CRITIC
+|
+v
+Assessment
+\end{verbatim}
+
+\subsection{Final Verdict}
+
+The interface displays:
+
+\begin{itemize}
+    \item verdict,
+    \item confidence,
+    \item strongest evidence,
+    \item strongest counter-evidence,
+    \item unresolved issues.
+\end{itemize}
+
+% ==================================================
+\section{Expected Contribution}
+% ==================================================
+
+The project is primarily a systems contribution rather than a proposal
+for a new fundamental machine learning algorithm.
+
+The expected contributions are:
+
+\begin{enumerate}
+    \item A practical multi-agent architecture for scientific claim
+    verification.
+
+    \item A claim-aware evidence retrieval pipeline operating over both
+    the original paper and dynamically discovered literature.
+
+    \item An adversarial Support--Attack--Critic reasoning structure.
+
+    \item A state-driven Supervisor capable of triggering additional
+    investigation when evidence is insufficient.
+
+    \item A structured evidence representation preserving provenance.
+
+    \item An empirical comparison between single-agent and multi-agent
+    claim verification.
+
+    \item An empirical comparison between conventional chunking and
+    claim-aware evidence retrieval.
+\end{enumerate}
+
+% ==================================================
+\section{Project Scope}
+% ==================================================
+
+To keep the project feasible, the initial scope should focus on scientific
+literature where reliable digital documents and metadata are available.
+
+The initial system can focus on:
+
+\begin{itemize}
+    \item machine learning,
+    \item artificial intelligence,
+    \item computer science,
+    \item related technical research.
+\end{itemize}
+
+The system should not initially attempt to verify every possible type of
+scientific claim across every discipline.
+
+Highly mathematical claims, specialized laboratory experiments, and
+claims requiring physical experimentation may require additional domain
+specific capabilities.
+
+% ==================================================
+\section{Potential Future Extensions}
+% ==================================================
+
+Future versions could support:
+
+\begin{itemize}
+    \item automatic research gap identification,
+    \item citation network analysis,
+    \item temporal analysis of how scientific consensus changes,
+    \item automatic replication attempts,
+    \item integration with code repositories,
+    \item benchmark-specific evidence analysis,
+    \item automatic experimental verification,
+    \item domain-specific scientific critics,
+    \item knowledge graphs connecting claims across papers.
+\end{itemize}
+
+These extensions are not required for the initial graduation-project
+implementation.
+
+% ==================================================
+\section{Conclusion}
+% ==================================================
+
+The proposed Multi-Agent Scientific Claim Verification System addresses a
+problem that is different from ordinary paper summarization.
+
+Instead of asking only what a paper says, the system asks whether the
+paper's important claims are supported by the broader literature and under
+what conditions those claims remain valid.
+
+The system decomposes this task into specialized responsibilities:
+
+\begin{verbatim}
+Supervisor
+    |
+Claim Analyst
+    |
+Paper Search Agent
+    |
+RAG / Evidence Agent
+    |
+Evidence Store
+    |
++-----------+
+|           |
+Support    Attack
+|           |
++-----------+
+    |
+Critic
+    |
+Verdict
+\end{verbatim}
+
+The key architectural feature is the adversarial interaction between
+independent supporting and opposing analyses, followed by a Critic that
+validates evidence and reasoning.
+
+The RAG component extends beyond conventional fixed-size chunking by
+performing claim-aware evidence retrieval and assembling evidence from
+both the target paper and externally discovered literature.
+
+The Supervisor makes the system adaptive by recognizing when additional
+investigation is necessary.
+
+Most importantly, the project can be evaluated experimentally rather than
+only demonstrated visually. A strong single-agent baseline, conventional
+RAG baseline, and ablation studies can determine whether each architectural
+component provides measurable value.
+
+The ultimate objective is therefore not to build a system that simply
+produces persuasive scientific text, but a system that can construct,
+challenge, verify, and transparently assess scientific claims using
+evidence from the research literature.
+
+\end{document}

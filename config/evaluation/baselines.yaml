@@ -1,0 +1,11 @@
+﻿baselines:
+  baseline_1_single_agent:
+    name: "Single-Agent Direct Verification"
+    model: "gpt-4o"
+    access_search: true
+    access_rag: true
+  baseline_2_standard_rag:
+    name: "Standard Chunking RAG"
+    chunk_size: 512
+    chunk_overlap: 50
+    retriever: "dense_similarity"

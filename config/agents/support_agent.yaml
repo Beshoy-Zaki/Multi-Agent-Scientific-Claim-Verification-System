@@ -1,0 +1,12 @@
+﻿agent:
+  name: "SupportAgent"
+  role: "Proponent Evidence-Grounded Reasoner"
+  model: "gpt-4o"
+  temperature: 0.3
+  parameters:
+    target_relationship: "SUPPORTS"
+    focus_areas:
+      - independent_replications
+      - consistency_across_benchmarks
+      - ablation_evidence
+      - theoretical_validity

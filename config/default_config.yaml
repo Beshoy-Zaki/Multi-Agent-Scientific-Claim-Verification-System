@@ -1,0 +1,20 @@
+﻿# Default System Configuration for MASCV
+project:
+  name: "Multi-Agent Scientific Claim Verification System"
+  version: "0.1.0"
+
+system:
+  max_investigation_iterations: 3
+  early_stopping_confidence: 0.85
+  inconclusive_threshold: 0.40
+  save_intermediate_states: true
+  output_directory: "outputs/reports"
+
+execution:
+  concurrency_limit: 5
+  timeout_seconds: 600
+
+storage:
+  vector_db_path: "data/vector_db"
+  cache_dir: "data/processed_cache"
+  persist_evidence_store: true

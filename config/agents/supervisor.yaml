@@ -1,0 +1,10 @@
+﻿agent:
+  name: "SupervisorAgent"
+  role: "Investigation Manager & Global State Controller"
+  model: "gpt-4o"
+  temperature: 0.1
+  parameters:
+    max_search_cycles: 3
+    min_confidence_to_finalize: 0.70
+    min_independent_sources: 2
+    require_replication_check: true
