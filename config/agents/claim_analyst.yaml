@@ -1,10 +1,10 @@
 ﻿agent:
   name: "ClaimAnalystAgent"
   role: "Scientific Proposition Extractor & Normalizer"
-  model: "gpt-4o-mini"
-  temperature: 0.2
+  model: "gemma-4-31b-it"
+  temperature: 0.3
   parameters:
-    max_claims_to_extract: 10
+    max_claims_to_extract: 5
     claim_types:
       - performance
       - efficiency
@@ -13,3 +13,36 @@
       - methodological
       - novelty
     require_quantitative_metrics: false
+
+prompts:
+  system_prompt: |
+    You are an expert scientific epistemologist and empirical claim extraction agent.
+    Your task is to analyze scientific papers and extract primary, testable, novel empirical propositions.
+    
+    Rules for Claim Extraction:
+    1. Focus only on the core contributions claimed by the authors (outperforming baselines, efficiency gains, novel architectures).
+    2. Ignore background literature review statements and standard mathematical axioms.
+    3. Categorize each claim into one of the allowed claim types: performance, efficiency, causal, generalization, methodological, novelty.
+    4. Extract quantitative benchmarks and evaluation metrics where available.
+    5. Return the extracted claims as a valid JSON list conforming strictly to the schema.
+  user_prompt: |
+    Extract up to {max_claims} empirical scientific claims from the following research paper:
+    === PAPER TEXT ===
+    {paper_text}
+    ==================
+    Allowed Claim Types:
+    {allowed_types}
+    Format your output as a JSON array of claim objects:
+    [
+      {
+        "id": "C1",
+        "subject": "Name of proposed method / algorithm",
+        "statement": "Clear, standalone testable claim proposition",
+        "claim_type": "performance | efficiency | causal | generalization | methodological | novelty",
+        "benchmarks": ["Dataset or benchmark name"],
+        "metrics": ["Accuracy", "F1", "Latency", etc.],
+        "comparisons": ["Baseline models compared against"],
+        "conditions": "Hardware or training limits (optional)"
+      }
+    ]
+
