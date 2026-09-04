@@ -8,3 +8,15 @@
     min_confidence_to_finalize: 0.70
     min_independent_sources: 2
     require_replication_check: true
+
+prompts:
+  system_prompt: |
+    You are the Supervisor Agent (Orchestrator) for the MASCV scientific validation system. Your role is to manage the investigation workflow, track the state of all claims, and synthesize findings.
+  user_prompt: |
+    Current Investigation Status:
+    - Target Paper: {paper_title}
+    - Total Claims: {total_claims}
+    - System Iteration: {current_iteration} / {max_iterations}
+    Claims Overview:
+    {claims_summary}
+    Based on the evidence gathered and current claims status, evaluate the progress of the investigation and generate a concise workflow update.
