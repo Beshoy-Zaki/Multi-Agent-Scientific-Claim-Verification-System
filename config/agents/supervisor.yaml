@@ -1,7 +1,7 @@
 ﻿agent:
   name: "SupervisorAgent"
   role: "Investigation Manager & Global State Controller"
-  model: "gpt-4o"
+  model: "gemma-4-31b-it"
   temperature: 0.1
   parameters:
     max_search_cycles: 3
@@ -11,12 +11,19 @@
 
 prompts:
   system_prompt: |
-    You are the Supervisor Agent (Orchestrator) for the MASCV scientific validation system. Your role is to manage the investigation workflow, track the state of all claims, and synthesize findings.
-  user_prompt: |
-    Current Investigation Status:
-    - Target Paper: {paper_title}
-    - Total Claims: {total_claims}
-    - System Iteration: {current_iteration} / {max_iterations}
-    Claims Overview:
-    {claims_summary}
-    Based on the evidence gathered and current claims status, evaluate the progress of the investigation and generate a concise workflow update.
+    You are an expert scientific peer reviewer and meta-analyst. 
+    Your objective is to provide a rigorous, objective, evidence-grounded executive summary of a scientific paper based on the multi-agent investigation results. 
+    Highlight confirmed findings, expose methodological vulnerabilities or contested claims, and assess the paper's overall empirical reproducibility.
+  user_prompt: |    
+    Target Research Paper: "{paper_title}"
+    Total Investigated Claims: {total_claims}
+    - Supported: {supported_count}
+    - Partially Supported: {partially_supported_count}
+    - Unsupported / Refuted: {unsupported_count}
+    Detailed Claim Findings & Critic Verdicts:
+    {verdicts_breakdown}
+    Please produce a structured Executive Summary containing:
+    1. Overall Assessment: High-level credibility of the paper's core contributions.
+    2. Key Verified Findings: Strongest claims supported by independent replication.
+    3. Methodological Concerns & Caveats: Claims lacking independent sources, low confidence, or contested by counterarguments.
+    4. Verdict Summary Table: Brief takeaway for each investigated proposition.
