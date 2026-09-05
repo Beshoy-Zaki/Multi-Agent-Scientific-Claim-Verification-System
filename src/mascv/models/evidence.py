@@ -2,11 +2,13 @@
 
 from enum import Enum
 from typing import Optional, Dict, Any
-from pydantic import BaseModel
+
+from pydantic import BaseModel, Field
 
 
 class EvidenceRelationship(str, Enum):
-    """Relationship between an evidence snippet and a scientific claim."""
+    """Relationship between evidence and a scientific claim."""
+
     SUPPORTS = "SUPPORTS"
     CONTRADICTS = "CONTRADICTS"
     QUALIFIES = "QUALIFIES"
@@ -16,14 +18,30 @@ class EvidenceRelationship(str, Enum):
 
 
 class EvidenceBundle(BaseModel):
-    """Claim-aware evidence bundle with full provenance tracking."""
+    """Claim-aware evidence bundle with provenance tracking."""
+
     id: str
+
     claim_id: str
+
     source_paper_id: str
+
     source_title: str
+
     location: str
+
     content: str
+
     context: Optional[str] = None
+
     relationship: EvidenceRelationship
-    confidence_score: float = 0.0
-    experimental_conditions: Optional[Dict[str, Any]] = None
+
+    confidence_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+    )
+
+    experimental_conditions: Optional[
+        Dict[str, Any]
+    ] = None
