@@ -1,9 +1,14 @@
 """LLM-based extraction of scientific evidence."""
 
-from typing import List, Literal
+from typing import Any, List, Literal, Optional
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+# Picks up GOOGLE_API_KEY / GEMINI_API_KEY from a .env file if present. Safe
+# to call repeatedly / when no .env exists (it's a no-op in that case).
+load_dotenv()
 
 
 class ExtractedEvidence(BaseModel):
@@ -38,13 +43,24 @@ class EvidenceExtractor:
     def __init__(
         self,
         model_name: str = "gemini-2.5-flash",
+        llm: Optional[Any] = None,
     ) -> None:
+        """
+        Args:
+            model_name: Gemini model to use when ``llm`` is not supplied.
+            llm: Optional pre-built chat model. Lets callers (and tests)
+                inject a fake/mock LLM instead of requiring a live
+                GOOGLE_API_KEY / GEMINI_API_KEY just to construct the agent.
+        """
 
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=0.1,
-            max_retries=2,
-        )
+        if llm is not None:
+            self.llm = llm
+        else:
+            self.llm = ChatGoogleGenerativeAI(
+                model=model_name,
+                temperature=0.1,
+                max_retries=2,
+            )
 
         self.structured_llm = self.llm.with_structured_output(
             ExtractedEvidence

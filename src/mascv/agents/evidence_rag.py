@@ -54,16 +54,29 @@ class EvidenceRAGAgent(BaseAgent):
     def __init__(
         self,
         config: Dict[str, Any] = None,
+        retriever: Any = None,
+        extractor: Any = None,
     ) -> None:
+        """
+        Args:
+            config: Agent configuration (flat dict or a loaded
+                ``config/agents/evidence_rag.yaml`` with an ``agent`` key).
+            retriever: Optional pre-built retriever (defaults to a fresh
+                ``HybridRetriever``). Useful for tests.
+            extractor: Optional pre-built ``EvidenceExtractor`` (or a mock).
+                Lets callers inject a fake extractor instead of requiring a
+                live GOOGLE_API_KEY / GEMINI_API_KEY just to construct the
+                agent.
+        """
 
         super().__init__(
             name="EvidenceRAGAgent",
             config=config,
         )
 
-        self.retriever = HybridRetriever()
+        self.retriever = retriever or HybridRetriever()
 
-        self.extractor = EvidenceExtractor(
+        self.extractor = extractor or EvidenceExtractor(
             model_name=self.config.get(
                 "model",
                 "gemini-2.5-flash",
@@ -141,6 +154,15 @@ class EvidenceRAGAgent(BaseAgent):
         claim_state["status_message"] = (
             f"Extracted {len(all_evidence)} evidence bundles."
         )
+
+        # `_get_active_claim` returns a fresh dict (via `model_dump()`) when
+        # `state["claims"][active_claim_id]` is a pydantic
+        # `ClaimInvestigationState`, which is the canonical shape defined in
+        # `mascv.core.state`. Without writing it back explicitly here, every
+        # mutation above (evidence_bundle_ids, status_message) is silently
+        # lost as soon as the input state uses real pydantic models instead
+        # of plain dicts.
+        state["claims"][state["active_claim_id"]] = claim_state
 
         return state
 

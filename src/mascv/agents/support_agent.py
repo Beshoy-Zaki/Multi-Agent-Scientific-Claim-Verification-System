@@ -1,13 +1,17 @@
 ﻿"""Support Agent: Constructs an evidence-grounded case for a claim."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
 from langchain.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from mascv.agents.base import BaseAgent
 from mascv.models.argument import Argument
 from mascv.models.evidence import EvidenceBundle
+
+# Picks up GOOGLE_API_KEY / GEMINI_API_KEY from a .env file if present.
+load_dotenv()
 
 
 @tool
@@ -50,28 +54,40 @@ class SupportAgent(BaseAgent):
     def __init__(
         self,
         config: Dict[str, Any] = None,
+        llm: Optional[Any] = None,
     ) -> None:
+        """
+        Args:
+            config: Agent configuration (flat dict or a loaded
+                ``config/agents/support_agent.yaml`` with an ``agent`` key).
+            llm: Optional pre-built chat model. Lets callers (and tests)
+                inject a fake/mock LLM instead of requiring a live
+                GOOGLE_API_KEY / GEMINI_API_KEY just to construct the agent.
+        """
 
         super().__init__(
             name="SupportAgent",
             config=config,
         )
 
-        model_name = self.config.get(
-            "model",
-            "gemini-2.5-flash",
-        )
+        if llm is not None:
+            self.llm = llm
+        else:
+            model_name = self.config.get(
+                "model",
+                "gemini-2.5-flash",
+            )
 
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=float(
-                self.config.get(
-                    "temperature",
-                    0.2,
-                )
-            ),
-            max_retries=2,
-        )
+            self.llm = ChatGoogleGenerativeAI(
+                model=model_name,
+                temperature=float(
+                    self.config.get(
+                        "temperature",
+                        0.2,
+                    )
+                ),
+                max_retries=2,
+            )
 
         self.structured_llm = (
             self.llm.with_structured_output(

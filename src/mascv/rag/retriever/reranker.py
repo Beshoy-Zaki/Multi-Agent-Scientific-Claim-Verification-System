@@ -44,3 +44,23 @@ def rerank_chunks(
         key=lambda x: x["rerank_score"],
         reverse=True,
     )[:top_k]
+
+
+class EvidenceReranker:
+    """Thin class wrapper around :func:`rerank_chunks`.
+
+    ``evidence_rag.py`` uses the ``rerank_chunks`` function directly, but the
+    RAG pipeline is documented (and tested, see ``tests/unit/test_rag``) as a
+    class-based component alongside ``HybridRetriever``. This wrapper keeps
+    both call styles working without duplicating the ranking logic.
+    """
+
+    def __init__(self, top_k: int = 5) -> None:
+        self.top_k = top_k
+
+    def rerank(
+        self,
+        chunks: List[Dict[str, Any]],
+        top_k: int = None,
+    ) -> List[Dict[str, Any]]:
+        return rerank_chunks(chunks, top_k=top_k or self.top_k)
