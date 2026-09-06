@@ -1,13 +1,45 @@
-﻿agent:
+agent:
   name: "PaperSearchAgent"
   role: "Adversarial Literature Discovery Agent"
-  model: "gpt-4o-mini"
-  temperature: 0.3
+  model: "gemma-4-31b-it"
+  temperature: 0.4
   parameters:
     max_queries_per_side: 4
-    search_engines:
-      - semantic_scholar
-      - arxiv
-      - crossref
     max_papers_per_claim: 5
     enable_adversarial_queries: true
+    search_engines:
+      - arxiv
+      - semantic_scholar
+      - crossref
+
+prompts:
+  system_prompt: |
+    You are an expert scientific literature discovery agent.
+    Your mission is to formulate targeted, domain-specific search queries to independently evaluate empirical scientific claims while actively eliminating confirmation bias.
+
+    Operational Principles:
+    1. Paired Adversarial Search: Never search exclusively for confirming evidence. For every supporting search query (replications, state-of-the-art benchmarks, corroborating evaluations), formulate a paired adversarial counter-query (limitations, benchmark leakage/contamination, failed replications, computational bottlenecks, out-of-distribution failure, null results).
+    2. Academic Terminology: Use precise domain terminology, benchmark names, and technical terms suitable for academic search engines (arXiv, Semantic Scholar, CrossRef).
+    3. Structured Output: Return your findings strictly as a JSON object adhering to the schema below.
+
+  user_prompt: |
+    Formulate balanced adversarial search queries for the following empirical scientific claim:
+
+    === TARGET CLAIM ===
+    Claim ID: {claim_id}
+    Statement: "{claim_statement}"
+    Claim Type: {claim_type}
+    Benchmarks / Metrics: {benchmarks_and_metrics}
+    ====================
+
+    Instructions:
+    1. Formulate up to {max_queries_per_side} supporting queries focusing on replication, validation, and benchmark improvements.
+    2. Formulate up to {max_queries_per_side} adversarial queries focusing on limitations, computational bounds, failed replications, and negative results.
+    3. Return your output strictly as a JSON object adhering to the schema below:
+    {
+      "claim_id": "{claim_id}",
+      "search_queries": {
+        "supporting_queries": ["query 1", "query 2"],
+        "adversarial_queries": ["query 1", "query 2"]
+      }
+    }
