@@ -1,8 +1,9 @@
-﻿agent:
+agent:
   name: "SupervisorAgent"
   role: "Investigation Manager & Global State Controller"
-  model: "gemma-4-31b-it"
-  temperature: 0.35
+  model: "gemma-4-26b-a4b-it"
+  temperature: 0.2
+  thinking_level: "HIGH"
   parameters:
     max_search_cycles: 3
     min_confidence_to_finalize: 0.70

@@ -19,11 +19,26 @@ class ClaimAnalystAgent(BaseAgent):
         config: Optional[Dict[str, Any]] = None,
         llm_client: Optional[Any] = None,
     ) -> None:
+        if config is None:
+            try:
+                from mascv.utils.config_loader import load_config
+                config = load_config("config/agents/claim_analyst.yaml")
+            except Exception:
+                config = {}
         super().__init__(name="ClaimAnalystAgent", config=config)
-        self.llm_client = llm_client
 
         agent_config = self.config.get("agent", {}) if self.config else {}
-        self.model_name = agent_config.get("model", "gemma-4-31b-it")
+        self.model_name = agent_config.get("model", "gemma-4-26b-a4b-it")
+        self.thinking_level = agent_config.get("thinking_level", "HIGH")
+        self.temperature = agent_config.get("temperature", 0.2)
+
+        from mascv.utils.llm import LLMClient
+        self.llm_client = llm_client or LLMClient(
+            model_name=self.model_name,
+            temperature=self.temperature,
+            thinking_level=self.thinking_level,
+        )
+
         params = agent_config.get("parameters", {})
         self.max_claims = params.get("max_claims_to_extract", 10)
         self.allowed_types = params.get(
@@ -52,26 +67,24 @@ class ClaimAnalystAgent(BaseAgent):
         return state
 
     def _get_target_paper_text(self, state: InvestigationState) -> str:
-        """Extract high-value sections (Abstract, Intro, Methods, Results) to optimize LLM context."""
+        """Provide the full, complete paper text directly without artificial truncation or section summarization."""
         if not state.paper:
             return state.metadata.get("raw_paper_text", "")
 
-        # If parsed sections are available, pick key empirical sections
+        # If raw_text is populated, pass the entire paper text directly
+        if state.paper.raw_text and state.paper.raw_text.strip():
+            return state.paper.raw_text
+
+        # If parsed sections are available, assemble all sections in full without truncation
         if state.paper.sections:
-            key_sections: List[str] = []
+            parts: List[str] = []
             if state.paper.metadata and state.paper.metadata.abstract:
-                key_sections.append(f"Abstract:\n{state.paper.metadata.abstract}")
-
+                parts.append(f"Abstract:\n{state.paper.metadata.abstract}")
             for s in state.paper.sections:
-                t_lower = s.title.lower()
-                if any(k in t_lower for k in ["abstract", "introduction", "method", "result", "conclusion", "experiment"]):
-                    key_sections.append(f"Section {s.title}:\n{s.content[:4000]}")
+                parts.append(f"Section {s.title}:\n{s.content}")
+            return "\n\n".join(parts)
 
-            if key_sections:
-                return "\n\n".join(key_sections)[:18000]
-
-        # Fallback to the first 18,000 characters of raw text
-        return state.paper.raw_text[:18000]
+        return state.metadata.get("raw_paper_text", "")
 
     def extract_claims(self, paper_text: str, paper_id: str = "paper_1") -> List[Claim]:
         """Formalize raw paper statements into structured Claim objects using Gemma 4."""

@@ -1,15 +1,12 @@
-"""Paper Search Agent: Discovers external literature via adversarial search queries and academic engines."""
+"""Paper Search Agent: Grounded literature discovery agent using Gemma 4 with live web search."""
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from mascv.agents.base import BaseAgent
 from mascv.models.paper import PaperMetadata
-from mascv.search.academic_search.arxiv_client import ArxivClient
-from mascv.search.academic_search.crossref_client import CrossrefClient
-from mascv.search.academic_search.semantic_scholar_client import SemanticScholarClient
-from mascv.search.base_search import BaseSearchClient
 from mascv.utils.config_loader import load_config
 from mascv.utils.llm import LLMClient
 from mascv.utils.text_processing import extract_json_from_text
@@ -18,14 +15,18 @@ logger = logging.getLogger(__name__)
 
 
 class PaperSearchAgent(BaseAgent):
-    """Executes multi-query adversarial searches across academic engines using Gemma 4."""
+    """Discovers real academic literature using Gemma 4 with live Google Search Grounding.
+    
+    Replaces complex, multi-file Python API wrappers (arXiv, Semantic Scholar, CrossRef)
+    with an intelligent, prompt-driven search-grounded discovery engine.
+    """
 
     def __init__(
         self,
         config: Optional[Dict[str, Any]] = None,
         llm_client: Optional[Any] = None,
     ) -> None:
-        """Initialize search agent with search clients, engine parameters, and LLM client."""
+        """Initialize agent with configuration and search-grounded Gemma 4 client."""
         if config is None:
             try:
                 config = load_config("config/agents/paper_search.yaml")
@@ -33,39 +34,41 @@ class PaperSearchAgent(BaseAgent):
                 config = {}
         super().__init__(name="PaperSearchAgent", config=config)
 
-        # Agent parameters
+        # Agent parameters from YAML
         agent_config = self.config.get("agent", {}) if self.config else {}
         self.params = agent_config.get("parameters", {}) or self.config.get("parameters", {})
-        self.max_queries_per_side = self.params.get("max_queries_per_side", 4)
-        self.max_papers_per_claim = self.params.get("max_papers_per_claim", 5)
-        self.enable_adversarial = self.params.get("enable_adversarial_queries", True)
+        self.max_papers = self.params.get("max_papers", 5)
+        self.allowed_domains = self.params.get(
+            "allowed_domains",
+            [
+                "arxiv.org",
+                "semanticscholar.org",
+                "doi.org",
+                "ncbi.nlm.nih.gov",
+                "openreview.net",
+                "aclanthology.org",
+                "nature.com",
+                "ieee.org",
+            ],
+        )
 
-        # Load prompts from config
+        # Load prompts from config/agents/paper_search.yaml
         prompts = self.config.get("prompts", {}) if self.config else {}
         self.system_prompt = prompts.get("system_prompt", "")
         self.user_prompt_template = prompts.get("user_prompt", "")
 
-        # LLM Client (defaults to Gemma 4 from .env)
-        self.llm_client = llm_client
+        self.thinking_level = agent_config.get("thinking_level", "HIGH")
 
-        # Academic search engines (100% Free, zero search API keys needed)
-        engine_names = self.params.get(
-            "search_engines", ["arxiv", "semantic_scholar", "crossref"]
+        # Initialize Gemma 4 LLM client with grounding enabled and high thinking level
+        self.llm_client = llm_client or LLMClient(
+            model_name="gemma-4-26b-a4b-it",
+            temperature=0.1,
+            enable_grounding=True,
+            thinking_level=self.thinking_level,
         )
-        self.search_clients: List[BaseSearchClient] = []
-
-        if "arxiv" in engine_names:
-            self.search_clients.append(ArxivClient())
-        if "semantic_scholar" in engine_names:
-            self.search_clients.append(SemanticScholarClient())
-        if "crossref" in engine_names:
-            self.search_clients.append(CrossrefClient())
-
-        if not self.search_clients:
-            self.search_clients.append(ArxivClient())
 
     def execute(self, state: Any) -> Any:
-        """Discover candidate external papers for the active claim in the investigation state."""
+        """Execute grounded literature search for the active claim in the investigation state."""
         claims = getattr(state, "claims", {}) if hasattr(state, "claims") else state.get("claims", {})
         active_claim_id = (
             getattr(state, "active_claim_id", None)
@@ -85,159 +88,180 @@ class PaperSearchAgent(BaseAgent):
         statement = ""
         claim_id = active_claim_id or "C1"
         claim_type = "performance"
-        benchmarks = "Standard benchmarks"
+        subject = "Scientific / Empirical Claim"
+        benchmarks = ""
 
         if claim_obj:
             statement = getattr(claim_obj, "statement", str(claim_obj))
             claim_id = getattr(claim_obj, "id", claim_id)
             claim_type = getattr(claim_obj, "claim_type", claim_type)
+            subject = getattr(claim_obj, "subject", subject)
             benchmarks_list = getattr(claim_obj, "benchmarks", [])
-            if benchmarks_list:
-                benchmarks = ", ".join(benchmarks_list)
+            metrics_list = getattr(claim_obj, "metrics", [])
+            all_metrics = list(benchmarks_list) + list(metrics_list)
+            if all_metrics:
+                benchmarks = ", ".join(all_metrics)
         elif isinstance(state, dict):
             statement = state.get("claim_statement", "")
+            subject = state.get("subject", subject)
+            benchmarks = state.get("benchmarks", "")
 
-        logger.info("Running PaperSearchAgent for claim: '%s'", statement[:80])
+        logger.info("Executing Gemma 4 Grounded PaperSearch for: '%s'", statement[:80])
 
-        # 1. Formulate supporting & adversarial queries using Gemma 4
-        queries_dict = self.generate_adversarial_queries(
+        # Discover papers using Gemma 4 with live web grounding
+        discovered_papers = self.search_literature(
             claim_statement=statement,
             claim_id=claim_id,
             claim_type=str(claim_type),
+            subject=str(subject),
             benchmarks=benchmarks,
         )
-        all_queries = (
-            queries_dict.get("supporting_queries", [])
-            + queries_dict.get("adversarial_queries", [])
-        )
 
-        # 2. Search academic engines (arXiv, Semantic Scholar, CrossRef)
-        discovered_papers = self.search_literature(all_queries)
-
-        # 3. Store discovered papers in state
+        # Store discovered papers in state (preserving both titles and full metadata)
         if hasattr(state, "claims") and active_claim_id in state.claims:
             target_claim_state = state.claims[active_claim_id]
             if hasattr(target_claim_state, "external_papers_found"):
                 target_claim_state.external_papers_found.extend(
                     [p.title for p in discovered_papers]
                 )
+            if hasattr(target_claim_state, "discovered_papers_metadata"):
+                target_claim_state.discovered_papers_metadata.extend(discovered_papers)
+
+            # Store in global state metadata for RAG/debate agent retrieval
+            if hasattr(state, "metadata") and isinstance(state.metadata, dict):
+                state.metadata.setdefault("discovered_papers_metadata", {})[active_claim_id] = discovered_papers
         elif isinstance(state, dict):
             if "discovered_papers" not in state:
                 state["discovered_papers"] = []
             state["discovered_papers"].extend(discovered_papers)
-            state["search_queries"] = queries_dict
 
         return state
 
-    def generate_adversarial_queries(
+    def search_literature(
         self,
         claim_statement: str,
         claim_id: str = "C1",
         claim_type: str = "performance",
-        benchmarks: str = "Standard benchmarks",
-    ) -> Dict[str, List[str]]:
-        """Formulate paired supporting and adversarial queries using Gemma 4 and prompt templates."""
+        subject: Optional[str] = None,
+        benchmarks: Optional[str] = None,
+        adversarial_focus: Optional[str] = None,
+    ) -> List[PaperMetadata]:
+        """Perform prompt-driven academic search across arXiv, Semantic Scholar, PubMed, etc.
+        
+        Substitutes all custom API client scrapers with a single search-grounded call.
+        """
         if not claim_statement or not claim_statement.strip():
-            return {"supporting_queries": [], "adversarial_queries": []}
+            return []
 
-        # Initialize LLM client if not already provided
-        client = self.llm_client
-        if client is None:
-            try:
-                client = LLMClient(model_name="gemma-4-31b-it", temperature=0.4)
-            except Exception as e:
-                logger.debug("Could not auto-initialize LLMClient: %s", e)
+        clean_subject = subject or "Scientific Empirical Methodology"
+        clean_adversarial = (
+            adversarial_focus
+            or "Empirical limitations, negative replications, benchmark contamination, scaling failure modes"
+        )
 
-        # 1. Use Gemma 4 with prompt template
-        if client and self.user_prompt_template:
-            formatted_prompt = (
-                self.user_prompt_template
-                .replace("{claim_id}", str(claim_id))
-                .replace("{claim_statement}", claim_statement)
-                .replace("{claim_type}", str(claim_type))
-                .replace("{benchmarks_and_metrics}", str(benchmarks))
-                .replace("{max_queries_per_side}", str(self.max_queries_per_side))
+        # 1. Format user prompt with claim specifics
+        formatted_prompt = (
+            self.user_prompt_template
+            .replace("{claim_id}", str(claim_id))
+            .replace("{claim_statement}", claim_statement)
+            .replace("{claim_type}", str(claim_type))
+            .replace("{subject}", clean_subject)
+            .replace("{adversarial_focus}", clean_adversarial)
+            .replace("{max_papers}", str(self.max_papers))
+        )
+
+        # Dynamically omit benchmarks if empty or generic
+        clean_bench = str(benchmarks or "").strip()
+        is_generic_benchmarks = (
+            not clean_bench
+            or clean_bench.lower() in ["standard benchmarks", "none", "n/a", "null"]
+        )
+
+        if is_generic_benchmarks:
+            # Omit the benchmarks line so search targets the method and technique directly
+            formatted_prompt = formatted_prompt.replace(
+                "Key Benchmarks / Metrics: {benchmarks_and_metrics}\n", ""
+            )
+            formatted_prompt = formatted_prompt.replace(
+                "Key Benchmarks / Metrics: {benchmarks_and_metrics}", ""
+            )
+            formatted_prompt = formatted_prompt.replace(
+                "verifying the stated metrics on the specified benchmarks.",
+                "verifying the stated findings and methodology.",
+            )
+        else:
+            formatted_prompt = formatted_prompt.replace(
+                "{benchmarks_and_metrics}", clean_bench
             )
 
-            try:
-                logger.info("Generating adversarial queries with Gemma 4...")
-                if hasattr(client, "generate"):
-                    response_text = client.generate(
-                        prompt=formatted_prompt,
-                        system_prompt=self.system_prompt,
-                    )
-                elif callable(client):
-                    response_text = client(formatted_prompt)
-                else:
-                    response_text = ""
+        # 2. Call Gemma 4 with live Google Search Grounding
+        try:
+            logger.info("Calling Gemma 4 a4b with Google Search Grounding...")
+            response_text = self.llm_client.generate(
+                prompt=formatted_prompt,
+                system_prompt=self.system_prompt,
+                enable_grounding=True,
+            )
 
-                json_str = extract_json_from_text(response_text)
-                if json_str:
-                    data = json.loads(json_str)
-                    search_queries = data.get("search_queries", data)
-                    sup = search_queries.get("supporting_queries", [])
-                    adv = search_queries.get("adversarial_queries", [])
-                    if sup or adv:
-                        return {
-                            "supporting_queries": sup[: self.max_queries_per_side],
-                            "adversarial_queries": adv[: self.max_queries_per_side],
-                        }
-            except Exception as e:
-                logger.warning("LLM query generation failed, falling back to heuristic: %s", e)
+            # 3. Extract JSON from the model's response
+            json_str = extract_json_from_text(response_text)
+            if not json_str:
+                logger.warning("No JSON found in Gemma 4 search response: %s", response_text[:200])
+                return []
 
-        # 2. Heuristic fallback when LLM is unavailable
-        return self._heuristic_queries(claim_statement)
+            raw_papers = json.loads(json_str)
+            if isinstance(raw_papers, dict):
+                raw_papers = (
+                    raw_papers.get("papers")
+                    or raw_papers.get("discovered_papers")
+                    or raw_papers.get("publications")
+                    or [raw_papers]
+                )
 
-    def _heuristic_queries(self, claim_statement: str) -> Dict[str, List[str]]:
-        """Deterministic keyword heuristic for fallback query generation."""
-        clean_stmt = claim_statement.strip().rstrip(".")
+            # 4. Domain safety filter & PaperMetadata conversion
+            papers: List[PaperMetadata] = []
+            for item in raw_papers:
+                if not isinstance(item, dict):
+                    continue
 
-        supporting = [
-            f'"{clean_stmt}"',
-            f"{clean_stmt} replication",
-            f"{clean_stmt} benchmark",
-        ][: self.max_queries_per_side]
+                url = str(item.get("url") or "").strip()
+                # Ensure the paper URL originates from allowed academic repositories
+                if self.allowed_domains and not any(d in url.lower() for d in self.allowed_domains):
+                    logger.debug("Filtered out non-academic URL: %s", url)
+                    continue
 
-        adversarial = []
-        if self.enable_adversarial:
-            adversarial = [
-                f"{clean_stmt} limitations",
-                f"{clean_stmt} failure cases",
-                f"{clean_stmt} benchmark contamination",
-                f"{clean_stmt} baseline discrepancy",
-            ][: self.max_queries_per_side]
+                # Automatically extract arXiv ID from URL if missing
+                arxiv_id = item.get("arxiv_id")
+                if not arxiv_id and "arxiv.org" in url:
+                    match = re.search(r"(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5}|[a-zA-Z-]+/[0-9]+)", url)
+                    if match:
+                        arxiv_id = match.group(1)
 
-        return {
-            "supporting_queries": supporting,
-            "adversarial_queries": adversarial,
-        }
+                # Automatically extract DOI from URL if missing
+                doi = item.get("doi")
+                if not doi and "doi.org" in url:
+                    match = re.search(r"doi\.org/(10\.[0-9]{4,9}/[-._;()/:A-Za-z0-9]+)", url)
+                    if match:
+                        doi = match.group(1)
 
-    def search_literature(self, queries: List[str]) -> List[PaperMetadata]:
-        """Query academic search engines and deduplicate candidate papers."""
-        seen_titles = set()
-        seen_ids = set()
-        all_papers: List[PaperMetadata] = []
+                metadata = PaperMetadata(
+                    title=item.get("title", "Untitled Publication"),
+                    authors=item.get("authors") or [],
+                    abstract=item.get("abstract"),
+                    arxiv_id=arxiv_id,
+                    doi=doi,
+                    url=url,
+                    year=item.get("year"),
+                    venue=item.get("venue") or "Academic Repository",
+                    relationship=item.get("relationship"),
+                    relevance_score=item.get("relevance_score"),
+                    relevance_rationale=item.get("relevance_rationale"),
+                    key_findings=item.get("key_findings"),
+                )
+                papers.append(metadata)
 
-        limit_per_query = max(1, self.max_papers_per_claim // max(1, len(queries)))
+            return papers[: self.max_papers]
 
-        for query in queries:
-            for client in self.search_clients:
-                try:
-                    papers = client.search(query, max_results=limit_per_query)
-                    for paper in papers:
-                        norm_title = paper.title.lower().strip()
-                        paper_id = paper.arxiv_id or paper.doi or norm_title
-
-                        if norm_title in seen_titles or paper_id in seen_ids:
-                            continue
-
-                        seen_titles.add(norm_title)
-                        seen_ids.add(paper_id)
-                        all_papers.append(paper)
-
-                        if len(all_papers) >= self.max_papers_per_claim:
-                            return all_papers
-                except Exception as e:
-                    logger.warning("Search client error on query '%s': %s", query, e)
-
-        return all_papers
+        except Exception as e:
+            logger.error("Gemma 4 grounded search failed: %s", e)
+            return []

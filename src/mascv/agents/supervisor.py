@@ -1,4 +1,4 @@
-﻿"""Supervisor Agent: Manages overall investigation and controls workflow state."""
+"""Supervisor Agent: Manages overall investigation and controls workflow state."""
 
 from typing import Any, Dict, Optional
 from mascv.agents.base import BaseAgent
@@ -18,11 +18,26 @@ class SupervisorAgent(BaseAgent):
         config: Optional[Dict[str, Any]] = None,
         llm_client: Optional[Any] = None,
     ) -> None:
+        if config is None:
+            try:
+                from mascv.utils.config_loader import load_config
+                config = load_config("config/agents/supervisor.yaml")
+            except Exception:
+                config = {}
         super().__init__(name="SupervisorAgent", config=config)
-        self.llm_client = llm_client
 
         agent_config = self.config.get("agent", {}) if self.config else {}
-        self.model_name = agent_config.get("model", "gemma-4-31b-it")
+        self.model_name = agent_config.get("model", "gemma-4-26b-a4b-it")
+        self.thinking_level = agent_config.get("thinking_level", "HIGH")
+        self.temperature = agent_config.get("temperature", 0.2)
+
+        from mascv.utils.llm import LLMClient
+        self.llm_client = llm_client or LLMClient(
+            model_name=self.model_name,
+            temperature=self.temperature,
+            thinking_level=self.thinking_level,
+        )
+
         params = agent_config.get("parameters", {})
         self.max_search_cycles = params.get("max_search_cycles", 3)
         self.min_confidence = params.get("min_confidence_to_finalize", 0.70)

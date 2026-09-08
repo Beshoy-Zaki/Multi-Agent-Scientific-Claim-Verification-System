@@ -1,8 +1,9 @@
-﻿agent:
+agent:
   name: "ClaimAnalystAgent"
   role: "Scientific Proposition Extractor & Normalizer"
-  model: "gemma-4-31b-it"
-  temperature: 0.3
+  model: "gemma-4-26b-a4b-it"
+  temperature: 0.2
+  thinking_level: "HIGH"
   parameters:
     max_claims_to_extract: 5
     claim_types:
@@ -24,9 +25,10 @@ prompts:
     2. Ignore background literature review statements and standard mathematical axioms.
     3. Categorize each claim into one of the allowed claim types: performance, efficiency, causal, generalization, methodological, novelty.
     4. Extract quantitative benchmarks and evaluation metrics where available.
-    5. Return the extracted claims as a valid JSON list conforming strictly to the schema.
+    5. Avoid Claim Overlap & Redundancy: Consolidate related metrics or sub-propositions into distinct, independent claims. Do not produce multiple claims that differ only by metric variants of the same core finding.
+    6. Return the extracted claims as a valid JSON list conforming strictly to the schema.
   user_prompt: |
-    Extract up to {max_claims} empirical scientific claims from the following research paper:
+    Extract up to {max_claims} distinct, non-overlapping empirical scientific claims from the following research paper:
     === PAPER TEXT ===
     {paper_text}
     ==================
