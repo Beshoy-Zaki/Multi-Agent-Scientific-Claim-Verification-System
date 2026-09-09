@@ -57,7 +57,7 @@ class PaperSearchAgent(BaseAgent):
         self.system_prompt = prompts.get("system_prompt", "")
         self.user_prompt_template = prompts.get("user_prompt", "")
 
-        self.thinking_level = agent_config.get("thinking_level", "HIGH")
+        self.thinking_level = agent_config.get("thinking_level", "minimal")
 
         # Initialize Gemma 4 LLM client with grounding enabled and high thinking level
         self.llm_client = llm_client or LLMClient(
