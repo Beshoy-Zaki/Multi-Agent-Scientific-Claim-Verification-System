@@ -88,21 +88,49 @@ class SupervisorAgent(BaseAgent):
 
         # Rule 3: Check each claim to see what it needs
         for claim_id, claim_state in state.claims.items():
-            if claim_state.is_finalized:
+            is_final = (
+                claim_state.get("is_finalized", False)
+                if isinstance(claim_state, dict)
+                else getattr(claim_state, "is_finalized", False)
+            )
+            if is_final:
                 continue
 
+            external_papers = (
+                claim_state.get("external_papers_found", [])
+                if isinstance(claim_state, dict)
+                else getattr(claim_state, "external_papers_found", [])
+            )
+            iteration_count = (
+                claim_state.get("iteration_count", 0)
+                if isinstance(claim_state, dict)
+                else getattr(claim_state, "iteration_count", 0)
+            )
+
             # Check 1: Do we have enough independent sources?
-            if len(claim_state.external_papers_found) < self.min_independent_sources:
-                if claim_state.iteration_count < self.max_search_cycles:
+            if len(external_papers) < self.min_independent_sources:
+                if iteration_count < self.max_search_cycles:
                     state.active_claim_id = claim_id
-                    claim_state.iteration_count += 1
+                    if isinstance(claim_state, dict):
+                        claim_state["iteration_count"] = iteration_count + 1
+                    else:
+                        claim_state.iteration_count += 1
                     return "paper_search"
 
             # Check 2: If a verdict was issued, is the confidence high enough?
-            if claim_state.verdict and claim_state.verdict.confidence < self.min_confidence:
-                if claim_state.iteration_count < self.max_search_cycles:
+            verdict = (
+                claim_state.get("verdict")
+                if isinstance(claim_state, dict)
+                else getattr(claim_state, "verdict", None)
+            )
+            v_conf = getattr(verdict, "confidence", verdict.get("confidence", 0.0) if isinstance(verdict, dict) else 0.0) if verdict else 1.0
+            if verdict and v_conf < self.min_confidence:
+                if iteration_count < self.max_search_cycles:
                     state.active_claim_id = claim_id
-                    claim_state.iteration_count += 1
+                    if isinstance(claim_state, dict):
+                        claim_state["iteration_count"] = iteration_count + 1
+                    else:
+                        claim_state.iteration_count += 1
                     return "paper_search"
 
         # Rule 4: All claims have been searched and verified!
@@ -117,32 +145,45 @@ class SupervisorAgent(BaseAgent):
         )
         total_claims = len(state.claims)
 
+        def _get_verdict(c):
+            return c.get("verdict") if isinstance(c, dict) else getattr(c, "verdict", None)
+
+        def _get_v_type(v):
+            if not v:
+                return None
+            val = getattr(v, "verdict", v.get("verdict") if isinstance(v, dict) else None)
+            return getattr(val, "value", val)
+
         # Count verdict distributions
         supported_count = sum(
             1 for c in state.claims.values()
-            if c.verdict and c.verdict.verdict == VerdictType.SUPPORTED
+            if _get_v_type(_get_verdict(c)) == VerdictType.SUPPORTED.value
         )
         partially_supported_count = sum(
             1 for c in state.claims.values()
-            if c.verdict and c.verdict.verdict == VerdictType.PARTIALLY_SUPPORTED
+            if _get_v_type(_get_verdict(c)) == VerdictType.PARTIALLY_SUPPORTED.value
         )
         unsupported_count = sum(
             1 for c in state.claims.values()
-            if c.verdict and c.verdict.verdict == VerdictType.UNSUPPORTED
+            if _get_v_type(_get_verdict(c)) == VerdictType.UNSUPPORTED.value
         )
 
         # Build detailed verdicts breakdown
         breakdown_lines = []
         for cid, c_state in state.claims.items():
-            v_type = c_state.verdict.verdict.value if c_state.verdict else "Unverified"
-            v_conf = f"{c_state.verdict.confidence:.2f}" if c_state.verdict else "N/A"
+            verdict = _get_verdict(c_state)
+            claim = c_state.get("claim") if isinstance(c_state, dict) else getattr(c_state, "claim", None)
+            statement = claim.get("statement", "") if isinstance(claim, dict) else getattr(claim, "statement", "")
+
+            v_type = _get_v_type(verdict) or "Unverified"
+            v_conf_val = getattr(verdict, "confidence", verdict.get("confidence") if isinstance(verdict, dict) else None) if verdict else None
+            v_conf = f"{v_conf_val:.2f}" if v_conf_val is not None else "N/A"
             v_summary = (
-                c_state.verdict.synthesis_summary
-                if c_state.verdict and c_state.verdict.synthesis_summary
-                else "No synthesis summary available."
+                getattr(verdict, "synthesis_summary", verdict.get("synthesis_summary", "No synthesis summary available.") if isinstance(verdict, dict) else "No synthesis summary available.")
+                if verdict else "No synthesis summary available."
             )
             breakdown_lines.append(
-                f"- Claim {cid} [{v_type}, Confidence: {v_conf}]: {c_state.claim.statement}\n"
+                f"- Claim {cid} [{v_type}, Confidence: {v_conf}]: {statement}\n"
                 f"  Synthesis: {v_summary}"
             )
         verdicts_breakdown = (

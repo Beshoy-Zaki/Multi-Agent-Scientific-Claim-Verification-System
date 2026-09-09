@@ -1,7 +1,7 @@
-﻿agent:
+agent:
   name: "CriticAgent"
   role: "Scientific Judge, Citation Verifier & Verdict Synthesizer"
-  model: "gpt-4o"
+  model: "gemma-4-26b-a4b-it"
   temperature: 0.1
   parameters:
     verdict_classes:

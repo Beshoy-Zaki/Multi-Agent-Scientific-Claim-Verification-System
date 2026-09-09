@@ -1,8 +1,8 @@
-﻿agent:
+agent:
   name: "AttackAgent"
   role: "Independent Adversarial Investigator & Critic"
-  model: "gpt-4o"
-  temperature: 0.4
+  model: "gemma-4-26b-a4b-it"
+  temperature: 0.2
   parameters:
     target_relationship: "CONTRADICTS"
     focus_areas:

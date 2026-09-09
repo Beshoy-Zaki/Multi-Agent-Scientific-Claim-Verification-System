@@ -3,6 +3,12 @@
 import os
 import sys
 
+# Ensure UTF-8 output encoding on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Ensure src is on python path
 sys.path.insert(0, "src")
 
@@ -16,6 +22,8 @@ from mascv.agents.claim_analyst import ClaimAnalystAgent
 from mascv.agents.paper_search import PaperSearchAgent
 from mascv.agents.evidence_rag import EvidenceRAGAgent
 from mascv.agents.support_agent import SupportAgent
+from mascv.agents.attack_agent import AttackAgent
+from mascv.agents.critic_agent import CriticAgent
 
 
 def p(msg: str = ""):
@@ -24,7 +32,7 @@ def p(msg: str = ""):
 
 def main():
     p("=" * 80)
-    p("MASCV MULTI-AGENT PIPELINE INTEGRATION TEST (GEMMA 4)")
+    p("MASCV MULTI-AGENT PIPELINE INTEGRATION TEST (GEMMA 4 - ALL 7 AGENTS)")
     p("=" * 80)
 
     # 1. Parse Paper
@@ -84,7 +92,7 @@ def main():
             p(f"    - Bundle [{eid}]: ({rel}) {cnt[:80]}...")
 
     # 7. Support Agent (proponent argument construction)
-    p("\n[7] Running SupportAgent with Gemma 4...")
+    p("\n[7] Running SupportAgent (Agent 5) with Gemma 4...")
     support_agent = SupportAgent()
     state = support_agent.execute(state)
     active_state = state.claims[active_cid]
@@ -98,15 +106,67 @@ def main():
         p(f"    Support Argument Formed:")
         p(f"    - Stance:     {stance}")
         p(f"    - Strength:   {strength}")
-        p(f"    - Conclusion: {conclusion}")
+        p(f"    - Conclusion: {conclusion[:100]}...")
         p(f"    - Premises:   {len(premises)}")
         p(f"    - Cited IDs:  {cited}")
 
+    # 8. Attack Agent (adversarial counterargument construction)
+    p("\n[8] Running AttackAgent (Agent 6) with Gemma 4 & Scientific Search...")
+    attack_agent = AttackAgent()
+    state = attack_agent.execute(state)
+    active_state = state.claims[active_cid]
+    attack_arg = active_state.get("attack_argument") if isinstance(active_state, dict) else active_state.attack_argument
+    if attack_arg:
+        astance = getattr(attack_arg, "stance", attack_arg.get("stance") if isinstance(attack_arg, dict) else "")
+        astrength = getattr(attack_arg, "strength", attack_arg.get("strength") if isinstance(attack_arg, dict) else "")
+        aconclusion = getattr(attack_arg, "conclusion", attack_arg.get("conclusion") if isinstance(attack_arg, dict) else "")
+        apremises = getattr(attack_arg, "premises", attack_arg.get("premises", []) if isinstance(attack_arg, dict) else [])
+        alimitations = getattr(attack_arg, "identified_limitations", attack_arg.get("identified_limitations", []) if isinstance(attack_arg, dict) else [])
+        acited = getattr(attack_arg, "cited_evidence_ids", attack_arg.get("cited_evidence_ids", []) if isinstance(attack_arg, dict) else [])
+        p(f"    Attack Counterargument Formed:")
+        p(f"    - Stance:       {astance}")
+        p(f"    - Strength:     {astrength}")
+        p(f"    - Conclusion:   {aconclusion[:100]}...")
+        p(f"    - Attack Points:{len(apremises)}")
+        p(f"    - Limitations:  {len(alimitations)}")
+        p(f"    - Counter-URLs: {acited}")
+
+    # 9. Critic Agent (dialectical adjudication & verdict synthesis)
+    p("\n[9] Running CriticAgent (Agent 7) with Gemma 4...")
+    critic_agent = CriticAgent()
+    state = critic_agent.execute(state)
+    active_state = state.claims[active_cid]
+    verdict = active_state.get("verdict") if isinstance(active_state, dict) else active_state.verdict
+    if verdict:
+        v_type = getattr(verdict, "verdict", verdict.get("verdict") if isinstance(verdict, dict) else "")
+        v_conf = getattr(verdict, "confidence", verdict.get("confidence") if isinstance(verdict, dict) else 0.0)
+        v_summary = getattr(verdict, "synthesis_summary", verdict.get("synthesis_summary") if isinstance(verdict, dict) else "")
+        cf = getattr(verdict, "critic_finding", verdict.get("critic_finding") if isinstance(verdict, dict) else None)
+        p(f"    Final Synthesized Verdict:")
+        p(f"    - Verdict:         {v_type.value if hasattr(v_type, 'value') else v_type}")
+        p(f"    - Confidence:      {v_conf:.2f}")
+        p(f"    - Synthesis:       {v_summary[:120]}...")
+        if cf:
+            notes = getattr(cf, "critique_notes", cf.get("critique_notes") if isinstance(cf, dict) else "")
+            p(f"    - Critique Notes:  {notes}")
+
+    # 10. Supervisor Finalization
+    p("\n[10] Finalizing Multi-Agent Investigation with Supervisor...")
+    final_decision = supervisor.decide_next_step(state)
+    p(f"    Supervisor Final Decision: '{final_decision}'")
+    is_final = active_state.get("is_finalized") if isinstance(active_state, dict) else active_state.is_finalized
+    p(f"    Claim [{active_cid}] Finalized: {is_final}")
+
+    state = supervisor.execute(state)
+    exec_summary = supervisor.generate_executive_summary(state)
+    p(f"\n[11] Multi-Agent Investigation Executive Summary:\n{exec_summary}")
+
     p("\n" + "=" * 80)
-    p("SUCCESS: ALL 5 INTEGRATED AGENTS EXECUTED TOGETHER CLEANLY!")
+    p("SUCCESS: COMPLETE 7-AGENT PIPELINE EXECUTED END-TO-END WITH GEMMA 4!")
     p("=" * 80)
 
 
 if __name__ == "__main__":
     main()
+
 
