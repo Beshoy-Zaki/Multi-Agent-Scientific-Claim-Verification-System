@@ -1,4 +1,4 @@
-﻿"""Multi-Agent Scientific Claim Verification System (MASCV) - Research Dashboard."""
+"""Multi-Agent Scientific Claim Verification System (MASCV) - Research Dashboard."""
 
 import os
 import sys
@@ -376,8 +376,12 @@ with tab_paper:
         st.subheader("📑 Paper Section Browser")
         with st.expander("Explore Document Sections", expanded=False):
             for sec in paper.sections:
-                st.markdown(f"**{sec.heading or 'Section'}** ({len(sec.text.split())} words)")
-                st.text(sec.text[:300] + ("..." if len(sec.text) > 300 else ""))
+                sec_title = getattr(sec, "title", getattr(sec, "heading", "Section")) or "Section"
+                sec_content = getattr(sec, "content", getattr(sec, "text", "")) or ""
+                word_count = len(sec_content.split()) if sec_content else 0
+                st.markdown(f"**{sec_title}** ({word_count} words)")
+                if sec_content:
+                    st.text(sec_content[:300] + ("..." if len(sec_content) > 300 else ""))
                 st.markdown("---")
     else:
         st.info("👋 No publication loaded yet. Click **▶️ Run Full Multi-Agent Pipeline** in the sidebar to begin!")
