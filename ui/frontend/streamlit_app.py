@@ -184,6 +184,104 @@ def add_log(agent: str, message: str):
     st.session_state.execution_logs.append({"time": time_str, "agent": agent, "message": message})
 
 
+def get_field(obj: Any, field_name: str, default: Any = None) -> Any:
+    """Safely extract field from Pydantic model, dataclass, or dictionary."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(field_name, default)
+    return getattr(obj, field_name, default)
+
+
+def format_evidence_item(b: Any) -> Dict[str, Any]:
+    """Normalize evidence bundle whether it is a dict or EvidenceBundle Pydantic model."""
+    if b is None:
+        return {}
+    b_id = get_field(b, "id", "E-?")
+    source = get_field(b, "source_title", "Target Publication")
+    location = get_field(b, "location", "Document")
+    content = get_field(b, "content", "")
+    context = get_field(b, "context", None)
+    claim_id = get_field(b, "claim_id", "")
+    raw_rel = get_field(b, "relationship", "SUPPORTS")
+    rel_str = getattr(raw_rel, "value", str(raw_rel)) if raw_rel else "SUPPORTS"
+    confidence = float(get_field(b, "confidence_score", 0.0) or 0.0)
+    return {
+        "id": b_id,
+        "source_title": source,
+        "location": location,
+        "content": content,
+        "context": context,
+        "claim_id": claim_id,
+        "relationship": rel_str,
+        "confidence_score": confidence,
+    }
+
+
+def format_claim_item(claim_obj: Any) -> Dict[str, Any]:
+    """Normalize claim whether it is a dict or Claim Pydantic model."""
+    if claim_obj is None:
+        return {}
+    c_id = get_field(claim_obj, "id", "")
+    statement = get_field(claim_obj, "statement", "")
+    subject = get_field(claim_obj, "subject", "Scientific Proposition")
+    raw_type = get_field(claim_obj, "claim_type", "performance")
+    claim_type = getattr(raw_type, "value", str(raw_type)) if raw_type else "performance"
+    benchmarks = get_field(claim_obj, "benchmarks", []) or []
+    metrics = get_field(claim_obj, "metrics", []) or []
+    return {
+        "id": c_id,
+        "statement": statement,
+        "subject": subject,
+        "claim_type": claim_type,
+        "benchmarks": benchmarks,
+        "metrics": metrics,
+    }
+
+
+def format_argument_item(arg_obj: Any) -> Optional[Dict[str, Any]]:
+    """Normalize argument whether it is a dict or Argument Pydantic model."""
+    if arg_obj is None:
+        return None
+    raw_premises = get_field(arg_obj, "premises", []) or []
+    raw_limitations = get_field(arg_obj, "identified_limitations", []) or []
+    raw_citations = get_field(arg_obj, "cited_evidence_ids", []) or []
+    return {
+        "stance": get_field(arg_obj, "stance", "FOR"),
+        "strength": get_field(arg_obj, "strength", "Moderate"),
+        "conclusion": get_field(arg_obj, "conclusion", ""),
+        "premises": list(raw_premises),
+        "cited_evidence_ids": list(raw_citations),
+        "identified_limitations": list(raw_limitations),
+    }
+
+
+def format_verdict_item(verdict_obj: Any) -> Optional[Dict[str, Any]]:
+    """Normalize verdict whether it is a dict or Verdict Pydantic model."""
+    if verdict_obj is None:
+        return None
+    raw_v = get_field(verdict_obj, "verdict", "Inconclusive")
+    v_type = getattr(raw_v, "value", str(raw_v)) if raw_v else "Inconclusive"
+    confidence = float(get_field(verdict_obj, "confidence", 0.0) or 0.0)
+    synthesis = get_field(verdict_obj, "synthesis_summary", "")
+    finding = get_field(verdict_obj, "critic_finding", None)
+    finding_dict = None
+    if finding:
+        finding_dict = {
+            "citation_valid": bool(get_field(finding, "citation_valid", False)),
+            "reasoning_sound": bool(get_field(finding, "reasoning_sound", False)),
+            "overgeneralization_detected": bool(get_field(finding, "overgeneralization_detected", False)),
+            "fair_comparison": bool(get_field(finding, "fair_comparison", False)),
+            "critique_notes": str(get_field(finding, "critique_notes", "") or ""),
+        }
+    return {
+        "verdict": v_type,
+        "confidence": confidence,
+        "synthesis_summary": synthesis,
+        "critic_finding": finding_dict,
+    }
+
+
 # -----------------------------------------------------------------------------
 # Top Hero Banner
 # -----------------------------------------------------------------------------
@@ -405,14 +503,15 @@ if st.session_state.get("pipeline_running", False):
                 st.success(f"📚 Extracted & bundled **{len(evidence_items)} claim-aware evidence units**:")
 
                 with st.expander(f"🔍 Inspect Grounded Evidence Bundles ({len(evidence_items)} total)", expanded=True):
-                    for b in evidence_items[:5]:
-                        b_rel = b.relationship.value if hasattr(b.relationship, "value") else str(b.relationship)
+                    for raw_b in evidence_items[:5]:
+                        b = format_evidence_item(raw_b)
+                        b_rel = b["relationship"]
                         b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
                         st.markdown(f"""
                         <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 10px;">
                             <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
-                            <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b.source_title}</b> ({b.location or 'Document'})</span>
-                            <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #1E293B;">"{b.content[:240]}..."</p>
+                            <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b['source_title']}</b> ({b['location'] or 'Document'})</span>
+                            <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #1E293B;">"{b['content'][:240]}..."</p>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -651,14 +750,15 @@ with tab_stream:
 
         # 4. Evidence Extraction
         with st.expander(f"📚 Phase 4: Grounded Evidence Store ({len(state.global_evidence_store)} bundles extracted via `EvidenceRAGAgent`)", expanded=True):
-            for b in list(state.global_evidence_store.values())[:6]:
-                b_rel = b.relationship.value if hasattr(b.relationship, "value") else str(b.relationship)
+            for raw_b in list(state.global_evidence_store.values())[:6]:
+                b = format_evidence_item(raw_b)
+                b_rel = b["relationship"]
                 b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
                 st.markdown(f"""
                 <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 8px;">
                     <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
-                    <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b.source_title}</b> ({b.location or 'Document'})</span>
-                    <p style="margin: 2px 0 0 0; font-size: 0.88rem; color: #1E293B;">"{b.content[:220]}..."</p>
+                    <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b['source_title']}</b> ({b['location'] or 'Document'})</span>
+                    <p style="margin: 2px 0 0 0; font-size: 0.88rem; color: #1E293B;">"{b['content'][:220]}..."</p>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -667,46 +767,52 @@ with tab_stream:
             with st.expander("⚔️ Phases 5 & 6: Dialectic Debate Arena (`SupportAgent` vs `AttackAgent`)", expanded=True):
                 dcol1, dcol2 = st.columns(2)
                 with dcol1:
-                    sup = s_cstate.support_argument
+                    raw_sup = s_cstate.get("support_argument") if isinstance(s_cstate, dict) else getattr(s_cstate, "support_argument", None)
+                    sup = format_argument_item(raw_sup)
                     if sup:
                         st.markdown(f"""
                         <div class="debate-box support-box">
                             <span class="agent-pill agent-support">🛡️ SUPPORT AGENT</span>
-                            <span style="font-weight: 700; color: #047857;">STANCE: FOR ({sup.strength})</span>
-                            <p style="margin-top: 6px; font-weight: 600;">{sup.conclusion}</p>
+                            <span style="font-weight: 700; color: #047857;">STANCE: FOR ({sup['strength']})</span>
+                            <p style="margin-top: 6px; font-weight: 600;">{sup['conclusion']}</p>
                         </div>
                         """, unsafe_allow_html=True)
-                        for p in sup.premises:
+                        for p in sup["premises"]:
                             st.caption(f"• {p}")
                 with dcol2:
-                    atk = s_cstate.attack_argument
+                    raw_atk = s_cstate.get("attack_argument") if isinstance(s_cstate, dict) else getattr(s_cstate, "attack_argument", None)
+                    atk = format_argument_item(raw_atk)
                     if atk:
                         st.markdown(f"""
                         <div class="debate-box attack-box">
                             <span class="agent-pill agent-attack">⚔️ ATTACK AGENT</span>
-                            <span style="font-weight: 700; color: #BE123C;">STANCE: AGAINST ({atk.strength})</span>
-                            <p style="margin-top: 6px; font-weight: 600;">{atk.conclusion}</p>
+                            <span style="font-weight: 700; color: #BE123C;">STANCE: AGAINST ({atk['strength']})</span>
+                            <p style="margin-top: 6px; font-weight: 600;">{atk['conclusion']}</p>
                         </div>
                         """, unsafe_allow_html=True)
-                        for p in atk.premises:
+                        for p in atk["premises"]:
                             st.caption(f"• {p}")
 
         # 7. Critic Verdict
-        if s_verdict:
+        v_formatted = format_verdict_item(s_verdict)
+        if v_formatted:
             with st.expander("⚖️ Phase 7: Critic Agent Adjudication & 4-Point Peer Audit", expanded=True):
-                st.markdown(f"**Final Synthesized Verdict:** `{v_str}` ({conf_str} Confidence)")
-                st.info(f"**Scientific Synthesis:** {s_verdict.synthesis_summary}")
-                f_obj = s_verdict.critic_finding
+                v_type = v_formatted["verdict"]
+                v_conf = f"{int(v_formatted['confidence'] * 100)}%"
+                st.markdown(f"**Final Synthesized Verdict:** `{v_type}` ({v_conf} Confidence)")
+                if v_formatted["synthesis_summary"]:
+                    st.info(f"**Scientific Synthesis:** {v_formatted['synthesis_summary']}")
+                f_obj = v_formatted.get("critic_finding")
                 if f_obj:
                     qc1, qc2, qc3, qc4 = st.columns(4)
                     with qc1:
-                        st.metric("Grounding", "Verified ✅" if getattr(f_obj, "citation_valid", False) else "Unverified ❌")
+                        st.metric("Grounding", "Verified ✅" if f_obj.get("citation_valid") else "Unverified ❌")
                     with qc2:
-                        st.metric("Soundness", "Sound ✅" if getattr(f_obj, "reasoning_sound", False) else "Flawed ❌")
+                        st.metric("Soundness", "Sound ✅" if f_obj.get("reasoning_sound") else "Flawed ❌")
                     with qc3:
-                        st.metric("Overgeneralization", "Clean ✅" if not getattr(f_obj, "overgeneralization_detected", False) else "Detected ⚠️")
+                        st.metric("Overgeneralization", "Clean ✅" if not f_obj.get("overgeneralization_detected") else "Detected ⚠️")
                     with qc4:
-                        st.metric("Parity", "Fair ✅" if getattr(f_obj, "fair_comparison", False) else "Asymmetric ❌")
+                        st.metric("Parity", "Fair ✅" if f_obj.get("fair_comparison") else "Asymmetric ❌")
 
         # 8. Executive Summary
         exec_text = st.session_state.get("executive_summary")
@@ -767,7 +873,9 @@ with tab_claims:
         mcol1, mcol2, mcol3, mcol4 = st.columns(4)
         types_count = {}
         for c in state.claims.values():
-            ctype = c.claim.claim_type.value if hasattr(c.claim.claim_type, "value") else str(c.claim.claim_type)
+            raw_claim = c.get("claim") if isinstance(c, dict) else getattr(c, "claim", None)
+            c_dict = format_claim_item(raw_claim)
+            ctype = c_dict["claim_type"]
             types_count[ctype] = types_count.get(ctype, 0) + 1
 
         with mcol1:
@@ -783,8 +891,9 @@ with tab_claims:
 
         # Claim Cards
         for cid, cstate in state.claims.items():
-            claim = cstate.claim
-            ctype = claim.claim_type.value if hasattr(claim.claim_type, "value") else str(claim.claim_type)
+            raw_claim = cstate.get("claim") if isinstance(cstate, dict) else getattr(cstate, "claim", None)
+            claim = format_claim_item(raw_claim)
+            ctype = claim["claim_type"]
             is_active = (cid == st.session_state.active_claim_id)
 
             card_border = "#6366F1" if is_active else "#E2E8F0"
@@ -794,29 +903,32 @@ with tab_claims:
                 st.markdown(f"""
                 <div class="claim-card" style="border-color: {card_border}; border-width: {'2px' if is_active else '1px'};">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-weight: 800; color: #4F46E5; font-size: 1.1rem;">[{cid}] {claim.subject or 'Proposition'}</span>
+                        <span style="font-weight: 800; color: #4F46E5; font-size: 1.1rem;">[{cid}] {claim['subject'] or 'Proposition'}</span>
                         <span>
                             <span class="tag-pill" style="background-color: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
                             {active_badge}
                         </span>
                     </div>
-                    <p style="font-size: 1rem; color: #1E293B; margin-bottom: 10px;"><b>Statement:</b> {claim.statement}</p>
+                    <p style="font-size: 1rem; color: #1E293B; margin-bottom: 10px;"><b>Statement:</b> {claim['statement']}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
                 ccol1, ccol2 = st.columns([4, 1])
                 with ccol1:
                     tags_html = ""
-                    if claim.benchmarks:
-                        tags_html += "".join([f'<span class="tag-pill">📊 {b}</span>' for b in claim.benchmarks])
-                    if claim.metrics:
-                        tags_html += "".join([f'<span class="tag-pill">📈 {m}</span>' for m in claim.metrics])
+                    if claim["benchmarks"]:
+                        tags_html += "".join([f'<span class="tag-pill">📊 {b}</span>' for b in claim["benchmarks"]])
+                    if claim["metrics"]:
+                        tags_html += "".join([f'<span class="tag-pill">📈 {m}</span>' for m in claim["metrics"]])
                     if tags_html:
                         st.markdown(tags_html, unsafe_allow_html=True)
                 with ccol2:
                     if st.button(f"Select [{cid}]", key=f"btn_select_{cid}", use_container_width=True):
                         st.session_state.active_claim_id = cid
-                        state.active_claim_id = cid
+                        if hasattr(state, "active_claim_id"):
+                            state.active_claim_id = cid
+                        elif isinstance(state, dict):
+                            state["active_claim_id"] = cid
                         st.rerun()
 
     else:
@@ -829,31 +941,32 @@ with tab_claims:
 with tab_evidence:
     st.header("🔍 Grounded Scientific Evidence")
     if state and state.global_evidence_store:
-        st.write(f"Global Evidence Store contains **{len(state.global_evidence_store)} extracted evidence bundles**:")
+        raw_bundles = [format_evidence_item(b) for b in state.global_evidence_store.values()]
+        st.write(f"Global Evidence Store contains **{len(raw_bundles)} extracted evidence bundles**:")
 
         # Filter Options
         relationships = ["ALL", "SUPPORTS", "REPLICATES", "CONTRADICTS", "QUALIFIES"]
         selected_rel = st.selectbox("Filter Evidence by Relationship:", relationships)
 
-        filtered_bundles = list(state.global_evidence_store.values())
+        filtered_bundles = raw_bundles
         if selected_rel != "ALL":
-            filtered_bundles = [b for b in filtered_bundles if getattr(b, "relationship", None) == selected_rel or getattr(getattr(b, "relationship", None), "value", "") == selected_rel]
+            filtered_bundles = [b for b in raw_bundles if b["relationship"] == selected_rel]
 
         st.caption(f"Showing {len(filtered_bundles)} evidence item(s):")
 
         for bundle in filtered_bundles:
-            rel = bundle.relationship.value if hasattr(bundle.relationship, "value") else str(bundle.relationship)
+            rel = bundle["relationship"]
             rel_color = "#10B981" if rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if rel == "CONTRADICTS" else "#F59E0B")
 
-            with st.expander(f"[{bundle.id}] {bundle.source_title} ({rel})", expanded=False):
+            with st.expander(f"[{bundle['id']}] {bundle['source_title']} ({rel})", expanded=False):
                 st.markdown(f"""
                 <span class="tag-pill" style="background-color: {rel_color}20; color: {rel_color}; font-weight: bold;">{rel}</span>
-                <span class="tag-pill">📍 Location: {bundle.location or 'Paper'}</span>
-                <span class="tag-pill">🎯 Linked Claim: {bundle.claim_id}</span>
+                <span class="tag-pill">📍 Location: {bundle['location'] or 'Paper'}</span>
+                <span class="tag-pill">🎯 Linked Claim: {bundle['claim_id']}</span>
                 """, unsafe_allow_html=True)
-                st.markdown(f"**Evidence Passage:**\n\n> {bundle.content}")
-                if bundle.context:
-                    st.caption(f"Context: {bundle.context}")
+                st.markdown(f"**Evidence Passage:**\n\n> {bundle['content']}")
+                if bundle["context"]:
+                    st.caption(f"Context: {bundle['context']}")
     else:
         st.info("No evidence units extracted yet. Run the pipeline to collect evidence bundles.")
 
@@ -866,7 +979,9 @@ with tab_debate:
     active_id = st.session_state.active_claim_id
     if state and active_id and active_id in state.claims:
         cstate = state.claims[active_id]
-        st.subheader(f"Debate on Claim [{active_id}]: \"{cstate.claim.statement}\"")
+        claim_obj = cstate.get("claim") if isinstance(cstate, dict) else getattr(cstate, "claim", None)
+        claim_stmt = get_field(claim_obj, "statement", "")
+        st.subheader(f"Debate on Claim [{active_id}]: \"{claim_stmt}\"")
 
         col_sup, col_atk = st.columns(2)
 
@@ -880,15 +995,16 @@ with tab_debate:
                 </div>
             """, unsafe_allow_html=True)
 
-            sup_arg = cstate.support_argument if hasattr(cstate, "support_argument") else cstate.get("support_argument")
+            raw_sup = cstate.get("support_argument") if isinstance(cstate, dict) else getattr(cstate, "support_argument", None)
+            sup_arg = format_argument_item(raw_sup)
             if sup_arg:
-                st.markdown(f"**Argument Strength:** `{sup_arg.strength}`")
-                st.markdown(f"**Conclusion:**\n> {sup_arg.conclusion}")
+                st.markdown(f"**Argument Strength:** `{sup_arg['strength']}`")
+                st.markdown(f"**Conclusion:**\n> {sup_arg['conclusion']}")
                 st.markdown("**Core Affirmative Premises:**")
-                for i, p in enumerate(sup_arg.premises, 1):
+                for i, p in enumerate(sup_arg["premises"], 1):
                     st.write(f"• {p}")
-                if sup_arg.cited_evidence_ids:
-                    st.markdown(f"**Cited Evidence Bundles:** `{'`, `'.join(sup_arg.cited_evidence_ids)}`")
+                if sup_arg["cited_evidence_ids"]:
+                    st.markdown(f"**Cited Evidence Bundles:** `{'`, `'.join(sup_arg['cited_evidence_ids'])}`")
             else:
                 st.info("Support argument has not been constructed yet.")
 
@@ -904,20 +1020,21 @@ with tab_debate:
                 </div>
             """, unsafe_allow_html=True)
 
-            atk_arg = cstate.attack_argument if hasattr(cstate, "attack_argument") else cstate.get("attack_argument")
+            raw_atk = cstate.get("attack_argument") if isinstance(cstate, dict) else getattr(cstate, "attack_argument", None)
+            atk_arg = format_argument_item(raw_atk)
             if atk_arg:
-                st.markdown(f"**Attack Strength:** `{atk_arg.strength}`")
-                st.markdown(f"**Counter-Conclusion:**\n> {atk_arg.conclusion}")
+                st.markdown(f"**Attack Strength:** `{atk_arg['strength']}`")
+                st.markdown(f"**Counter-Conclusion:**\n> {atk_arg['conclusion']}")
                 st.markdown("**Counter-Premises & Vulnerabilities:**")
-                for i, p in enumerate(atk_arg.premises, 1):
+                for i, p in enumerate(atk_arg["premises"], 1):
                     st.write(f"• {p}")
-                if atk_arg.identified_limitations:
+                if atk_arg["identified_limitations"]:
                     st.markdown("**Identified Limitations:**")
-                    for lim in atk_arg.identified_limitations:
+                    for lim in atk_arg["identified_limitations"]:
                         st.caption(f"⚠️ {lim}")
-                if atk_arg.cited_evidence_ids:
+                if atk_arg["cited_evidence_ids"]:
                     st.markdown("**External Grounded Citations:**")
-                    for url in atk_arg.cited_evidence_ids:
+                    for url in atk_arg["cited_evidence_ids"]:
                         st.markdown(f"- [{url}]({url})")
             else:
                 st.info("Attack argument has not been constructed yet.")
@@ -935,11 +1052,12 @@ with tab_verdict:
     active_id = st.session_state.active_claim_id
     if state and active_id and active_id in state.claims:
         cstate = state.claims[active_id]
-        verdict_obj = cstate.verdict if hasattr(cstate, "verdict") else cstate.get("verdict")
+        raw_v = cstate.get("verdict") if isinstance(cstate, dict) else getattr(cstate, "verdict", None)
+        verdict_obj = format_verdict_item(raw_v)
 
         if verdict_obj:
-            v_type = verdict_obj.verdict.value if hasattr(verdict_obj.verdict, "value") else str(verdict_obj.verdict)
-            confidence = float(verdict_obj.confidence or 0.0)
+            v_type = verdict_obj["verdict"]
+            confidence = float(verdict_obj["confidence"] or 0.0)
 
             css_class = "verdict-inconclusive"
             badge_icon = "⚪"
@@ -973,30 +1091,30 @@ with tab_verdict:
             st.progress(confidence)
 
             # Critic Diagnostic Checklist
-            finding = verdict_obj.critic_finding if hasattr(verdict_obj, "critic_finding") else verdict_obj.get("critic_finding")
+            finding = verdict_obj.get("critic_finding")
             if finding:
                 st.subheader("🔍 Critic Agent Quality Audits")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    is_cv = getattr(finding, "citation_valid", False)
+                    is_cv = finding.get("citation_valid", False)
                     st.metric("Citation Grounding", "Verified ✅" if is_cv else "Unverified ❌")
                 with c2:
-                    is_rs = getattr(finding, "reasoning_sound", False)
+                    is_rs = finding.get("reasoning_sound", False)
                     st.metric("Reasoning Soundness", "Sound ✅" if is_rs else "Flawed ❌")
                 with c3:
-                    is_og = getattr(finding, "overgeneralization_detected", False)
+                    is_og = finding.get("overgeneralization_detected", False)
                     st.metric("Overgeneralization", "Detected ⚠️" if is_og else "Clean ✅")
                 with c4:
-                    is_fc = getattr(finding, "fair_comparison", False)
+                    is_fc = finding.get("fair_comparison", False)
                     st.metric("Comparative Parity", "Fair ✅" if is_fc else "Asymmetric ❌")
 
-                if getattr(finding, "critique_notes", None):
-                    st.info(f"**Critic Notes:** {finding.critique_notes}")
+                if finding.get("critique_notes"):
+                    st.info(f"**Critic Notes:** {finding['critique_notes']}")
 
             # Scientific Synthesis Summary
-            if verdict_obj.synthesis_summary:
+            if verdict_obj["synthesis_summary"]:
                 st.markdown("### 📝 Scientific Synthesis Summary")
-                st.markdown(f"> {verdict_obj.synthesis_summary}")
+                st.markdown(f"> {verdict_obj['synthesis_summary']}")
 
         else:
             st.info("Verdict has not been synthesized for this claim yet.")
@@ -1020,11 +1138,18 @@ with tab_verdict:
                     use_container_width=True,
                 )
             with bcol2:
+                paper_title = "Unknown"
+                if state.paper and getattr(state.paper, "metadata", None):
+                    paper_title = getattr(state.paper.metadata, "title", "Unknown")
+                claims_export = {}
+                for cid, c in state.claims.items():
+                    c_claim = c.get("claim") if isinstance(c, dict) else getattr(c, "claim", None)
+                    claims_export[cid] = c_claim.model_dump() if hasattr(c_claim, "model_dump") else c_claim
                 report_json = {
                     "claim_id": active_id,
-                    "paper_title": state.paper.metadata.title if state.paper and state.paper.metadata else "Unknown",
-                    "claims": {cid: c.claim.model_dump() for cid, c in state.claims.items()},
-                    "verdict": verdict_obj.model_dump() if verdict_obj and hasattr(verdict_obj, "model_dump") else None,
+                    "paper_title": paper_title,
+                    "claims": claims_export,
+                    "verdict": verdict_obj,
                     "executive_summary": exec_sum,
                 }
                 st.download_button(
