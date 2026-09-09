@@ -140,7 +140,7 @@ class CriticAgent(BaseAgent):
                 model=model_name,
                 temperature=temperature,
                 max_retries=2,
-                timeout=60.0,
+                timeout=120.0,
             )
 
         from mascv.utils.llm import LLMClient

@@ -45,7 +45,7 @@ class LLMClient:
         self.thinking_level = "high" if str(raw_thinking).lower() in ["high", "true", "1"] else "minimal"
 
         self.client = (
-            genai.Client(api_key=self.api_key, http_options=types.HttpOptions(timeout=90_000))
+            genai.Client(api_key=self.api_key, http_options=types.HttpOptions(timeout=120_000))
             if self.api_key
             else None
         )

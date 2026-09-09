@@ -87,7 +87,7 @@ class SupportAgent(BaseAgent):
                     )
                 ),
                 max_retries=2,
-                timeout=60.0,
+                timeout=120.0,
             )
 
         self.structured_llm = (

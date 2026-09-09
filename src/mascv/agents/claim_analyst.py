@@ -40,7 +40,7 @@ class ClaimAnalystAgent(BaseAgent):
         )
 
         params = agent_config.get("parameters", {})
-        self.max_claims = params.get("max_claims_to_extract", 10)
+        self.max_claims = params.get("max_claims_to_extract", 1)
         self.allowed_types = params.get(
             "claim_types",
             ["performance", "efficiency", "causal", "generalization", "methodological", "novelty"],

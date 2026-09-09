@@ -96,7 +96,7 @@ class EvidenceExtractor:
                 model=model_name,
                 temperature=0.3,
                 max_retries=2,
-                timeout=30.0,
+                timeout=120.0,
             )
 
         self.llm_client = LLMClient(
