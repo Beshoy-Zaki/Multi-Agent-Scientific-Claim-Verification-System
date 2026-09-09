@@ -84,25 +84,28 @@ CUSTOM_CSS = """
     margin-bottom: 20px;
     border-left: 8px solid;
 }
+.verdict-card h1, .verdict-card h2, .verdict-card h3, .verdict-card p, .verdict-card span {
+    color: inherit !important;
+}
 .verdict-supported {
-    background-color: #ECFDF5;
-    border-color: #10B981;
-    color: #065F46;
+    background-color: #ECFDF5 !important;
+    border-color: #10B981 !important;
+    color: #065F46 !important;
 }
 .verdict-partially {
-    background-color: #FFFBEB;
-    border-color: #F59E0B;
-    color: #92400E;
+    background-color: #FFFBEB !important;
+    border-color: #F59E0B !important;
+    color: #92400E !important;
 }
 .verdict-unsupported {
-    background-color: #FEF2F2;
-    border-color: #EF4444;
-    color: #991B1B;
+    background-color: #FEF2F2 !important;
+    border-color: #EF4444 !important;
+    color: #991B1B !important;
 }
 .verdict-inconclusive {
-    background-color: #F8FAFC;
-    border-color: #64748B;
-    color: #334155;
+    background-color: #F8FAFC !important;
+    border-color: #64748B !important;
+    color: #334155 !important;
 }
 
 /* Side-by-Side Debate Cards */
@@ -113,26 +116,38 @@ CUSTOM_CSS = """
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 .support-box {
-    background: linear-gradient(180deg, #F0FDF4 0%, #FFFFFF 100%);
-    border: 2px solid #86EFAC;
+    background: linear-gradient(180deg, #F0FDF4 0%, #FFFFFF 100%) !important;
+    border: 2px solid #86EFAC !important;
+    color: #065F46 !important;
+}
+.support-box p, .support-box span, .support-box div, .support-box b {
+    color: #065F46 !important;
 }
 .attack-box {
-    background: linear-gradient(180deg, #FFF1F2 0%, #FFFFFF 100%);
-    border: 2px solid #FDA4AF;
+    background: linear-gradient(180deg, #FFF1F2 0%, #FFFFFF 100%) !important;
+    border: 2px solid #FDA4AF !important;
+    color: #9F1239 !important;
+}
+.attack-box p, .attack-box span, .attack-box div, .attack-box b {
+    color: #9F1239 !important;
 }
 
-/* Claim Cards */
+/* Claim Cards (Explicit Contrast) */
 .claim-card {
-    background-color: #FFFFFF;
-    border: 1px solid #E2E8F0;
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
     border-radius: 10px;
     padding: 16px;
     margin-bottom: 12px;
+    color: #0F172A !important;
     transition: all 0.2s ease;
 }
 .claim-card:hover {
-    border-color: #6366F1;
+    border-color: #6366F1 !important;
     box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+}
+.claim-card p, .claim-card span, .claim-card div, .claim-card b {
+    color: #0F172A !important;
 }
 
 /* Tag Pills */
@@ -144,22 +159,150 @@ CUSTOM_CSS = """
     font-weight: 600;
     margin-right: 6px;
     background-color: #F1F5F9;
-    color: #475569;
+    color: #334155 !important;
 }
 
-/* Literature Search Card */
+/* Literature Search Card (Explicit Contrast) */
 .search-card {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-left: 4px solid #0284C7;
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    border-left: 4px solid #0284C7 !important;
     border-radius: 8px;
     padding: 12px 16px;
     margin-bottom: 10px;
+    color: #0F172A !important;
     transition: all 0.2s ease;
 }
 .search-card:hover {
-    border-left-color: #0369A1;
+    border-left-color: #0369A1 !important;
     box-shadow: 0 4px 12px rgba(2, 132, 199, 0.12);
+}
+.search-card p, .search-card span, .search-card div, .search-card b {
+    color: #0F172A !important;
+}
+
+/* ------------------------------------------------------------------------- */
+/* High-Contrast Markdown & Table Typography (Fixes White-on-White Anywhere) */
+/* ------------------------------------------------------------------------- */
+
+/* Global Markdown Tables (Executive Summary & Report Tables) */
+div[data-testid="stMarkdownContainer"] table,
+table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 16px 0 !important;
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+
+div[data-testid="stMarkdownContainer"] th,
+th {
+    background-color: #EEF2FF !important;
+    color: #1E1B4B !important;
+    font-weight: 700 !important;
+    padding: 10px 14px !important;
+    border: 1px solid #CBD5E1 !important;
+    text-align: left !important;
+}
+
+div[data-testid="stMarkdownContainer"] td,
+td {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    padding: 10px 14px !important;
+    border: 1px solid #E2E8F0 !important;
+}
+
+div[data-testid="stMarkdownContainer"] tr:nth-child(even) td,
+tr:nth-child(even) td {
+    background-color: #F8FAFC !important;
+    color: #0F172A !important;
+}
+
+div[data-testid="stMarkdownContainer"] td strong,
+div[data-testid="stMarkdownContainer"] td b,
+div[data-testid="stMarkdownContainer"] th strong,
+div[data-testid="stMarkdownContainer"] th b {
+    color: #0F172A !important;
+    font-weight: 700 !important;
+}
+
+/* Inline Code Elements inside Markdown & Tables */
+div[data-testid="stMarkdownContainer"] code,
+code {
+    background-color: #F1F5F9 !important;
+    color: #0F172A !important;
+    font-weight: 600 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    border: 1px solid #CBD5E1 !important;
+}
+
+/* Blockquotes (High Contrast) */
+div[data-testid="stMarkdownContainer"] blockquote,
+blockquote {
+    background-color: #F8FAFC !important;
+    border-left: 4px solid #6366F1 !important;
+    color: #1E293B !important;
+    padding: 12px 18px !important;
+    border-radius: 0 8px 8px 0 !important;
+    margin: 14px 0 !important;
+}
+div[data-testid="stMarkdownContainer"] blockquote p,
+blockquote p {
+    color: #1E293B !important;
+    font-weight: 500 !important;
+}
+
+/* Expander Containers & Content (Guarantees Dark Text in Expanders) */
+div[data-testid="stExpander"] {
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 10px !important;
+    margin-bottom: 12px !important;
+}
+div[data-testid="stExpander"] div[role="button"] {
+    color: #0F172A !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stExpander"] div[role="button"] p,
+div[data-testid="stExpander"] div[role="button"] span {
+    color: #0F172A !important;
+}
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] p,
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] li,
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] span,
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] div {
+    color: #1E293B !important;
+}
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h1,
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h2,
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h3,
+div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h4 {
+    color: #312E81 !important;
+}
+
+/* Bordered Containers (e.g. Tab 5 Full Executive Summary) */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 10px !important;
+    padding: 18px 24px !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] p,
+div[data-testid="stVerticalBlockBorderWrapper"] li,
+div[data-testid="stVerticalBlockBorderWrapper"] span,
+div[data-testid="stVerticalBlockBorderWrapper"] div {
+    color: #1E293B !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] h1,
+div[data-testid="stVerticalBlockBorderWrapper"] h2,
+div[data-testid="stVerticalBlockBorderWrapper"] h3,
+div[data-testid="stVerticalBlockBorderWrapper"] h4 {
+    color: #312E81 !important;
 }
 </style>
 """
@@ -1173,7 +1316,8 @@ with tab_verdict:
         st.subheader("📑 Full Executive Scientific Summary")
         exec_sum = st.session_state.get("executive_summary")
         if exec_sum:
-            st.markdown(exec_sum)
+            with st.container(border=True):
+                st.markdown(exec_sum)
 
             # Export Buttons
             st.markdown("### 📥 Export Scientific Assessment")

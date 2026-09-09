@@ -5,7 +5,7 @@ agent:
   temperature: 0.2
   thinking_level: "HIGH"
   parameters:
-    max_claims_to_extract: 1
+    max_claims_to_extract: 5
     claim_types:
       - performance
       - efficiency
