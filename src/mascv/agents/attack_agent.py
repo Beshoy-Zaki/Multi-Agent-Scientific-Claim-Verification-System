@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from typing import Any, Dict, List, Literal, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -119,12 +120,21 @@ class AttackAgent(BaseAgent):
                 rel = item.get("relationship", "") if isinstance(item, dict) else getattr(item, "relationship", "")
                 evidence_texts.append(f"[{eid}] ({rel}): {cnt}")
 
+        # Search for external counter-evidence, critiques, and limitations
+        external_evidence = ""
+        try:
+            search_query = f"{claim_statement} limitations weaknesses disadvantages failure modes"
+            external_evidence = search_scientific_evidence.invoke(search_query)
+        except Exception as exc:
+            logger.warning("Adversarial search invocation failed: %s", exc)
+
         # Construct adversarial counter-case
         argument = self.construct_counter_case(
             claim_id=active_claim_id,
             claim_text=claim_statement,
             support_text=support_text,
             evidence_summary="\n".join(evidence_texts),
+            external_evidence=external_evidence,
         )
 
         status_msg = f"Attack argument constructed (Strength: {argument.strength})."
@@ -146,6 +156,7 @@ class AttackAgent(BaseAgent):
         claim_text: str = "",
         support_text: str = "",
         evidence_summary: str = "",
+        external_evidence: str = "",
     ) -> Argument:
         """
         Challenge the claim and synthesize an adversarial counterargument Argument.
@@ -162,15 +173,19 @@ TARGET SCIENTIFIC CLAIM:
 PROPONENT SUPPORT CASE:
 {support_text or "No proponent argument provided."}
 
-AVAILABLE EXTRACTED EVIDENCE:
+AVAILABLE EXTRACTED EVIDENCE (TARGET PAPER):
 {evidence_summary or "No counter-evidence bundles indexed."}
 
+EXTERNAL CRITIQUES, BENCHMARKS & DISCUSSION:
+{external_evidence or "No external critiques found."}
+
 Rules:
-1. Examine methodological assumptions, benchmark bounds, and potential overgeneralizations.
-2. Formulate 2-3 specific, rigorous attack points based on the scientific context.
+1. Examine methodological assumptions, benchmark bounds, practical trade-offs, and potential overgeneralizations.
+2. Formulate 2-3 specific, rigorous attack points based on the scientific context and external critiques.
 3. Identify vulnerabilities (e.g. low-rank bottlenecking, complex reasoning degradation, memory overhead trade-offs).
 4. Distinguish between evidence that directly contradicts vs. evidence that narrows the claim's scope.
-5. Provide a realistic attack strength (Strong, Moderate, or Weak).
+5. Extract exact URLs from the external evidence into 'evidence_found' to ground the attack.
+6. Provide a realistic attack strength (Strong, Moderate, or Weak).
 """
 
         try:
@@ -194,12 +209,26 @@ Rules:
             f"The claim is vulnerable to boundary limitations: {'; '.join(vulnerabilities[:2])}"
         )
 
+        # Extract cited URLs from external evidence and attack result
+        cited_urls: List[str] = []
+        if attack_result.evidence_found:
+            for item in attack_result.evidence_found:
+                urls = re.findall(r"https?://[^\s)\]]+", item)
+                for u in urls:
+                    if u not in cited_urls:
+                        cited_urls.append(u)
+        if external_evidence:
+            urls = re.findall(r"https?://[^\s)\]]+", external_evidence)
+            for u in urls:
+                if u not in cited_urls:
+                    cited_urls.append(u)
+
         return Argument(
             agent_name="AttackAgent",
             claim_id=claim_id,
             stance="AGAINST",
             premises=premises,
-            cited_evidence_ids=[],
+            cited_evidence_ids=cited_urls[:5],
             conclusion=conclusion,
             strength=attack_result.strength,
             identified_limitations=vulnerabilities,
