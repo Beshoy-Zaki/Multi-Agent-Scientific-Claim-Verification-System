@@ -422,26 +422,35 @@ if st.session_state.get("pipeline_running", False):
             live_progress.progress(2 / 8)
             st.success(f"🎯 **ClaimAnalystAgent** formalized **{len(state.claims)} testable scientific claims**:")
 
-            for cid, cstate in state.claims.items():
-                claim = cstate.claim
-                ctype = claim.claim_type.value if hasattr(claim.claim_type, "value") else str(claim.claim_type)
+            claims_dict = get_field(state, "claims", {})
+            for cid, cstate in claims_dict.items():
+                raw_c = get_field(cstate, "claim")
+                claim = format_claim_item(raw_c)
+                ctype = claim["claim_type"]
+                subject = claim["subject"]
+                statement = claim["statement"]
+                benchmarks = claim["benchmarks"]
+                metrics = claim["metrics"]
                 st.markdown(f"""
                 <div class="claim-card" style="border-left: 5px solid #6366F1; margin-bottom: 8px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 700; color: #4338CA;">[{cid}] {claim.subject or 'Scientific Proposition'}</span>
+                        <span style="font-weight: 700; color: #4338CA;">[{cid}] {subject or 'Scientific Proposition'}</span>
                         <span class="tag-pill" style="background-color: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
                     </div>
-                    <p style="margin: 6px 0 4px 0; color: #1E293B;"><b>Statement:</b> {claim.statement}</p>
+                    <p style="margin: 6px 0 4px 0; color: #1E293B;"><b>Statement:</b> {statement}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                if claim.benchmarks or claim.metrics:
-                    tags = " ".join([f"`📊 {b}`" for b in claim.benchmarks] + [f"`📈 {m}`" for m in claim.metrics])
+                if benchmarks or metrics:
+                    tags = " ".join([f"`📊 {b}`" for b in benchmarks] + [f"`📈 {m}`" for m in metrics])
                     st.caption(f"Grounding Targets: {tags}")
 
             # Select primary active claim
-            active_id = state.active_claim_id or (list(state.claims.keys())[0] if state.claims else None)
+            active_id = get_field(state, "active_claim_id") or (list(claims_dict.keys())[0] if claims_dict else None)
             st.session_state.active_claim_id = active_id
-            state.active_claim_id = active_id
+            if isinstance(state, dict):
+                state["active_claim_id"] = active_id
+            elif hasattr(state, "active_claim_id"):
+                state.active_claim_id = active_id
 
             st.markdown("---")
 
@@ -449,16 +458,19 @@ if st.session_state.get("pipeline_running", False):
                 # ---------------------------------------------------------
                 # 3. Paper Search Agent
                 # ---------------------------------------------------------
-                active_claim = state.claims[active_id].claim
+                active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
+                active_claim = format_claim_item(get_field(active_cstate, "claim"))
                 st.markdown(f"### 🌐 Step 3/8: Literature Discovery via Google Search Grounding (`PaperSearchAgent`)")
-                st.info(f"Targeting Claim **[{active_id}]**: *\"{active_claim.statement[:120]}...\"*")
+                st.info(f"Targeting Claim **[{active_id}]**: *\"{active_claim['statement'][:120]}...\"*")
 
                 with st.spinner("Executing Google Grounded Search for peer publications and replications..."):
                     searcher = PaperSearchAgent()
                     state = searcher.execute(state)
                     st.session_state.pipeline_step = 3
-                    discovered_meta = getattr(state.claims[active_id], "discovered_papers_metadata", [])
-                    discovered_titles = getattr(state.claims[active_id], "external_papers_found", [])
+                    claims_dict = get_field(state, "claims", {})
+                    active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
+                    discovered_meta = get_field(active_cstate, "discovered_papers_metadata", [])
+                    discovered_titles = get_field(active_cstate, "external_papers_found", [])
                     total_discovered = len(discovered_meta) if discovered_meta else len(discovered_titles)
                     add_log("PaperSearchAgent", f"Retrieved {total_discovered} external citations/papers for claim [{active_id}].")
 
@@ -467,19 +479,25 @@ if st.session_state.get("pipeline_running", False):
 
                 if discovered_meta:
                     for p in discovered_meta:
-                        p_url = p.url or f"https://scholar.google.com/scholar?q={p.title.replace(' ', '+')}"
-                        p_score = int((p.relevance_score or 0.85) * 100) if p.relevance_score else 85
-                        p_rel = p.relationship or "RELEVANT"
+                        p_title = get_field(p, "title", "Discovered Paper")
+                        p_url = get_field(p, "url") or f"https://scholar.google.com/scholar?q={p_title.replace(' ', '+')}"
+                        p_score_raw = get_field(p, "relevance_score", 0.85)
+                        p_score = int((p_score_raw or 0.85) * 100)
+                        p_rel = get_field(p, "relationship", "RELEVANT")
+                        p_authors = get_field(p, "authors", [])
+                        p_year = get_field(p, "year", "N/A")
+                        p_venue = get_field(p, "venue", "Repository")
+                        p_findings = get_field(p, "relevance_rationale") or get_field(p, "key_findings")
                         st.markdown(f"""
                         <div class="search-card">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <a href="{p_url}" target="_blank" style="font-weight: 700; color: #0284C7; text-decoration: none;">📄 {p.title}</a>
+                                <a href="{p_url}" target="_blank" style="font-weight: 700; color: #0284C7; text-decoration: none;">📄 {p_title}</a>
                                 <span class="tag-pill" style="background: #E0F2FE; color: #0369A1;">{p_rel} • {p_score}% RELEVANCE</span>
                             </div>
                             <div style="font-size: 0.85rem; color: #64748B; margin-top: 4px;">
-                                Authors: {', '.join(p.authors[:3]) if p.authors else 'Academic Authors'} ({p.year or 'N/A'}) • Venue: {p.venue or 'Repository'}
+                                Authors: {', '.join(p_authors[:3]) if p_authors else 'Academic Authors'} ({p_year}) • Venue: {p_venue}
                             </div>
-                            {f'<div style="font-size: 0.85rem; color: #334155; margin-top: 4px; font-style: italic;"><b>Findings:</b> {p.relevance_rationale or p.key_findings}</div>' if (p.relevance_rationale or p.key_findings) else ''}
+                            {f'<div style="font-size: 0.85rem; color: #334155; margin-top: 4px; font-style: italic;"><b>Findings:</b> {p_findings}</div>' if p_findings else ''}
                         </div>
                         """, unsafe_allow_html=True)
                 elif discovered_titles:
@@ -496,7 +514,8 @@ if st.session_state.get("pipeline_running", False):
                     rag = EvidenceRAGAgent()
                     state = rag.execute(state)
                     st.session_state.pipeline_step = 4
-                    evidence_items = list(state.global_evidence_store.values())
+                    ev_store = get_field(state, "global_evidence_store", {})
+                    evidence_items = list(ev_store.values()) if isinstance(ev_store, dict) else []
                     add_log("EvidenceRAGAgent", f"Bundled {len(evidence_items)} evidence passages in global store.")
 
                 live_progress.progress(4 / 8)
@@ -525,25 +544,32 @@ if st.session_state.get("pipeline_running", False):
                     support = SupportAgent()
                     state = support.execute(state)
                     st.session_state.pipeline_step = 5
-                    sup_arg = state.claims[active_id].support_argument
+                    claims_dict = get_field(state, "claims", {})
+                    active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
+                    raw_sup = get_field(active_cstate, "support_argument")
+                    sup_arg = format_argument_item(raw_sup)
                     add_log("SupportAgent", f"Constructed affirmative argument for [{active_id}].")
 
                 live_progress.progress(5 / 8)
                 if sup_arg:
+                    st_strength = str(sup_arg.get("strength") or "MODERATE").upper()
                     st.markdown(f"""
                     <div class="debate-box support-box">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <span class="agent-pill agent-support">🛡️ SUPPORT AGENT</span>
-                            <span style="font-weight: 700; color: #047857;">STANCE: FOR • STRENGTH: {sup_arg.strength.upper()}</span>
+                            <span style="font-weight: 700; color: #047857;">STANCE: {sup_arg.get('stance', 'FOR')} • STRENGTH: {st_strength}</span>
                         </div>
-                        <p style="font-weight: 600; color: #065F46; margin-bottom: 6px;">Conclusion: {sup_arg.conclusion}</p>
+                        <p style="font-weight: 600; color: #065F46; margin-bottom: 6px;">Conclusion: {sup_arg.get('conclusion', '')}</p>
                     </div>
                     """, unsafe_allow_html=True)
-                    with st.expander("View Support Affirmative Premises", expanded=False):
-                        for p in sup_arg.premises:
-                            st.write(f"• {p}")
-                        if sup_arg.cited_evidence_ids:
-                            st.caption(f"Cited Evidence IDs: {', '.join(sup_arg.cited_evidence_ids)}")
+                    sup_premises = sup_arg.get("premises", [])
+                    sup_citations = sup_arg.get("cited_evidence_ids", [])
+                    if sup_premises:
+                        with st.expander("View Support Affirmative Premises", expanded=False):
+                            for p in sup_premises:
+                                st.write(f"• {p}")
+                            if sup_citations:
+                                st.caption(f"Cited Evidence IDs: {', '.join(sup_citations)}")
 
                 st.markdown("---")
 
@@ -555,31 +581,39 @@ if st.session_state.get("pipeline_running", False):
                     attack = AttackAgent()
                     state = attack.execute(state)
                     st.session_state.pipeline_step = 6
-                    atk_arg = state.claims[active_id].attack_argument
+                    claims_dict = get_field(state, "claims", {})
+                    active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
+                    raw_atk = get_field(active_cstate, "attack_argument")
+                    atk_arg = format_argument_item(raw_atk)
                     add_log("AttackAgent", f"Constructed adversarial counter-case for [{active_id}].")
 
                 live_progress.progress(6 / 8)
                 if atk_arg:
+                    atk_strength = str(atk_arg.get("strength") or "MODERATE").upper()
                     st.markdown(f"""
                     <div class="debate-box attack-box">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <span class="agent-pill agent-attack">⚔️ ATTACK AGENT</span>
-                            <span style="font-weight: 700; color: #BE123C;">STANCE: AGAINST • STRENGTH: {atk_arg.strength.upper()}</span>
+                            <span style="font-weight: 700; color: #BE123C;">STANCE: {atk_arg.get('stance', 'AGAINST')} • STRENGTH: {atk_strength}</span>
                         </div>
-                        <p style="font-weight: 600; color: #9F1239; margin-bottom: 6px;">Counter-Conclusion: {atk_arg.conclusion}</p>
+                        <p style="font-weight: 600; color: #9F1239; margin-bottom: 6px;">Counter-Conclusion: {atk_arg.get('conclusion', '')}</p>
                     </div>
                     """, unsafe_allow_html=True)
-                    with st.expander("View Attack Counter-Premises & Vulnerabilities", expanded=False):
-                        for p in atk_arg.premises:
-                            st.write(f"• {p}")
-                        if atk_arg.identified_limitations:
-                            st.write("**Identified Limitations:**")
-                            for lim in atk_arg.identified_limitations:
-                                st.caption(f"⚠️ {lim}")
-                        if atk_arg.cited_evidence_ids:
-                            st.write("**External Counter-Evidence Links:**")
-                            for link in atk_arg.cited_evidence_ids:
-                                st.markdown(f"- [{link}]({link})")
+                    atk_premises = atk_arg.get("premises", [])
+                    atk_limitations = atk_arg.get("identified_limitations", [])
+                    atk_citations = atk_arg.get("cited_evidence_ids", [])
+                    if atk_premises or atk_limitations:
+                        with st.expander("View Attack Counter-Premises & Vulnerabilities", expanded=False):
+                            for p in atk_premises:
+                                st.write(f"• {p}")
+                            if atk_limitations:
+                                st.write("**Identified Limitations:**")
+                                for lim in atk_limitations:
+                                    st.caption(f"⚠️ {lim}")
+                            if atk_citations:
+                                st.write("**External Counter-Evidence Links:**")
+                                for link in atk_citations:
+                                    st.markdown(f"- [{link}]({link})")
 
                 st.markdown("---")
 
@@ -591,14 +625,18 @@ if st.session_state.get("pipeline_running", False):
                     critic = CriticAgent()
                     state = critic.execute(state)
                     st.session_state.pipeline_step = 7
-                    verdict_obj = state.claims[active_id].verdict
+                    claims_dict = get_field(state, "claims", {})
+                    active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
+                    raw_verdict = get_field(active_cstate, "verdict")
+                    verdict_dict = format_verdict_item(raw_verdict)
                     add_log("CriticAgent", f"Synthesized verdict for claim [{active_id}].")
 
                 live_progress.progress(7 / 8)
-                if verdict_obj:
-                    v_type = verdict_obj.verdict.value if hasattr(verdict_obj.verdict, "value") else str(verdict_obj.verdict)
-                    conf = int((verdict_obj.confidence or 0.0) * 100)
-                    finding = verdict_obj.critic_finding
+                if verdict_dict:
+                    v_type = verdict_dict.get("verdict", "Inconclusive")
+                    conf = int((verdict_dict.get("confidence", 0.0) or 0.0) * 100)
+                    synthesis = verdict_dict.get("synthesis_summary", "")
+                    finding = verdict_dict.get("critic_finding")
 
                     st.markdown(f"""
                     <div style="background: #F8FAFC; border: 2px solid #6366F1; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;">
@@ -606,20 +644,20 @@ if st.session_state.get("pipeline_running", False):
                             <h3 style="margin: 0; color: #4338CA;">⚖️ Final Verdict: {v_type}</h3>
                             <span style="font-size: 1.2rem; font-weight: 800; color: #4338CA;">{conf}% Confidence</span>
                         </div>
-                        <p style="margin: 8px 0 0 0; color: #334155; font-size: 0.95rem;"><b>Scientific Synthesis:</b> {verdict_obj.synthesis_summary}</p>
+                        <p style="margin: 8px 0 0 0; color: #334155; font-size: 0.95rem;"><b>Scientific Synthesis:</b> {synthesis}</p>
                     </div>
                     """, unsafe_allow_html=True)
 
                     if finding:
                         c1, c2, c3, c4 = st.columns(4)
                         with c1:
-                            st.metric("Citation Grounding", "Verified ✅" if getattr(finding, "citation_valid", False) else "Unverified ❌")
+                            st.metric("Citation Grounding", "Verified ✅" if finding.get("citation_valid") else "Unverified ❌")
                         with c2:
-                            st.metric("Reasoning Soundness", "Sound ✅" if getattr(finding, "reasoning_sound", False) else "Flawed ❌")
+                            st.metric("Reasoning Soundness", "Sound ✅" if finding.get("reasoning_sound") else "Flawed ❌")
                         with c3:
-                            st.metric("Overgeneralization", "Clean ✅" if not getattr(finding, "overgeneralization_detected", False) else "Detected ⚠️")
+                            st.metric("Overgeneralization", "Clean ✅" if not finding.get("overgeneralization_detected") else "Detected ⚠️")
                         with c4:
-                            st.metric("Comparative Parity", "Fair ✅" if getattr(finding, "fair_comparison", False) else "Asymmetric ❌")
+                            st.metric("Comparative Parity", "Fair ✅" if finding.get("fair_comparison") else "Asymmetric ❌")
 
                 st.markdown("---")
 
@@ -671,26 +709,30 @@ state = st.session_state.state
 # -----------------------------------------------------------------------------
 with tab_stream:
     st.header("⚡ Real-Time Multi-Agent Activity Stream")
-    if state and state.claims:
+    claims_dict = get_field(state, "claims", {})
+    if state and claims_dict:
         st.write("Complete chronological trace of all 8 multi-agent verification phases:")
 
         # Summary Metric Bar
-        active_id = st.session_state.active_claim_id or (list(state.claims.keys())[0] if state.claims else None)
-        s_cstate = state.claims.get(active_id) if active_id else None
-        s_verdict = s_cstate.verdict if s_cstate and hasattr(s_cstate, "verdict") else None
-        v_str = s_verdict.verdict.value if s_verdict and hasattr(s_verdict.verdict, "value") else (str(s_verdict.verdict) if s_verdict else "Pending")
-        conf_str = f"{int(s_verdict.confidence * 100)}%" if s_verdict and s_verdict.confidence else "N/A"
+        active_id = st.session_state.active_claim_id or (list(claims_dict.keys())[0] if claims_dict else None)
+        s_cstate = claims_dict.get(active_id) if active_id else None
+        s_verdict = format_verdict_item(get_field(s_cstate, "verdict"))
+        v_str = s_verdict.get("verdict", "Pending") if s_verdict else "Pending"
+        conf_str = f"{int(s_verdict.get('confidence', 0.0) * 100)}%" if s_verdict and s_verdict.get("confidence") else "N/A"
+
+        ev_store = get_field(state, "global_evidence_store", {})
+        ev_count = len(ev_store) if isinstance(ev_store, (dict, list)) else 0
 
         m1, m2, m3, m4, m5 = st.columns(5)
         with m1:
-            st.metric("Total Claims", len(state.claims))
+            st.metric("Total Claims", len(claims_dict))
         with m2:
             st.metric("Active Claim", active_id or "None")
         with m3:
-            papers_found_count = len(getattr(s_cstate, "discovered_papers_metadata", [])) or len(getattr(s_cstate, "external_papers_found", [])) if s_cstate else 0
+            papers_found_count = len(get_field(s_cstate, "discovered_papers_metadata", [])) or len(get_field(s_cstate, "external_papers_found", [])) if s_cstate else 0
             st.metric("Discovered Sources", papers_found_count)
         with m4:
-            st.metric("Evidence Bundles", len(state.global_evidence_store))
+            st.metric("Evidence Bundles", ev_count)
         with m5:
             st.metric("Active Verdict", f"{v_str} ({conf_str})")
 
@@ -698,27 +740,34 @@ with tab_stream:
 
         # 1. Ingested Paper Summary
         with st.expander("📄 Phase 1: Ingested Paper & Structure (`PDFParser`)", expanded=True):
-            if state.paper:
-                p_meta = state.paper.metadata
-                st.markdown(f"**Publication Title:** {p_meta.title or 'Untitled Paper'}")
-                if p_meta.authors:
-                    st.caption(f"Authors: {', '.join(p_meta.authors)}")
-                st.write(f"Parsed **{len(state.paper.sections)} sections** across **{len(state.paper.raw_text.split()):,} words**.")
+            paper_obj = get_field(state, "paper")
+            if paper_obj:
+                p_meta = get_field(paper_obj, "metadata")
+                p_title = get_field(p_meta, "title", "Untitled Paper")
+                p_authors = get_field(p_meta, "authors", [])
+                st.markdown(f"**Publication Title:** {p_title or 'Untitled Paper'}")
+                if p_authors:
+                    st.caption(f"Authors: {', '.join(p_authors)}")
+                sections = get_field(paper_obj, "sections", [])
+                raw_text = get_field(paper_obj, "raw_text", "")
+                st.write(f"Parsed **{len(sections)} sections** across **{len(raw_text.split()):,} words**.")
 
         # 2. Extracted Claims
-        with st.expander(f"🎯 Phase 2: Formalized Scientific Claims ({len(state.claims)} extracted via `ClaimAnalystAgent`)", expanded=True):
-            for cid, cstate in state.claims.items():
-                c = cstate.claim
-                ctype = c.claim_type.value if hasattr(c.claim_type, "value") else str(c.claim_type)
+        with st.expander(f"🎯 Phase 2: Formalized Scientific Claims ({len(claims_dict)} extracted via `ClaimAnalystAgent`)", expanded=True):
+            for cid, cstate in claims_dict.items():
+                c = format_claim_item(get_field(cstate, "claim"))
+                ctype = c["claim_type"]
+                subject = c["subject"]
+                statement = c["statement"]
                 is_act = (cid == active_id)
                 card_bg = "#EEF2FF" if is_act else "#F8FAFC"
                 st.markdown(f"""
                 <div style="background: {card_bg}; border: 1px solid #CBD5E1; border-left: 4px solid {'#4F46E5' if is_act else '#94A3B8'}; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;">
                     <div style="display: flex; justify-content: space-between;">
-                        <b>[{cid}] {c.subject or 'Scientific Proposition'}</b>
+                        <b>[{cid}] {subject or 'Scientific Proposition'}</b>
                         <span class="tag-pill" style="background: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
                     </div>
-                    <p style="margin: 4px 0; color: #1E293B;"><b>Statement:</b> {c.statement}</p>
+                    <p style="margin: 4px 0; color: #1E293B;"><b>Statement:</b> {statement}</p>
                 </div>
                 """, unsafe_allow_html=True)
 
