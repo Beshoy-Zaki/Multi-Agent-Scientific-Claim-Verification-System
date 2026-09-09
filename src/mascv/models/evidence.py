@@ -1,4 +1,4 @@
-﻿"""Evidence schemas, relationships, and bundles."""
+"""Evidence schemas, relationships, and bundles."""
 
 from enum import Enum
 from typing import Optional, Dict, Any
@@ -45,3 +45,14 @@ class EvidenceBundle(BaseModel):
     experimental_conditions: Optional[
         Dict[str, Any]
     ] = None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        if hasattr(self, key):
+            val = getattr(self, key)
+            if isinstance(val, Enum):
+                return val.value
+            return val
+        raise KeyError(key)

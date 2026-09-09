@@ -1,7 +1,27 @@
-﻿"""Abstract base agent interface for MASCV agents."""
+"""Abstract base agent interface for MASCV agents."""
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
+
+
+class AgentConfig(dict):
+    """Configuration dictionary that preserves full YAML structure while allowing flat access to the 'agent' section."""
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in self:
+            return super().get(key, default)
+        agent = super().get("agent")
+        if isinstance(agent, dict) and key in agent:
+            return agent[key]
+        return default
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self:
+            return super().__getitem__(key)
+        agent = super().get("agent")
+        if isinstance(agent, dict) and key in agent:
+            return agent[key]
+        return super().__getitem__(key)
 
 
 class BaseAgent(ABC):
@@ -12,16 +32,25 @@ class BaseAgent(ABC):
         self.name = name
 
         raw_config = config or {}
+        self.config = AgentConfig(raw_config) if isinstance(raw_config, dict) else raw_config
 
-        # The YAML files under config/agents/*.yaml are shaped as
-        # {"agent": {"model": ..., "temperature": ..., "parameters": {...}}}.
-        # Unwrap that nesting here so `self.config.get("model")` works
-        # whether the caller passes a flat dict (as tests do) or a loaded
-        # agent YAML config directly.
-        if isinstance(raw_config, dict) and "agent" in raw_config:
-            self.config = raw_config["agent"]
-        else:
-            self.config = raw_config
+    @property
+    def agent_config(self) -> Dict[str, Any]:
+        """Access the 'agent' section of the config, or the config itself if flat."""
+        if isinstance(self.config, dict):
+            agent = self.config.get("agent")
+            if isinstance(agent, dict):
+                return agent
+        return self.config or {}
+
+    @property
+    def prompts(self) -> Dict[str, Any]:
+        """Access prompt templates defined in configuration."""
+        if isinstance(self.config, dict):
+            p = self.config.get("prompts")
+            if isinstance(p, dict):
+                return p
+        return {}
 
     @abstractmethod
     def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:

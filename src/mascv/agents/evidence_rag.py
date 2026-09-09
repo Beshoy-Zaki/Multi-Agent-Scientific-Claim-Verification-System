@@ -1,4 +1,4 @@
-﻿"""RAG / Evidence Agent."""
+"""RAG / Evidence Agent."""
 
 from typing import Any, Dict, List
 from uuid import uuid4
@@ -204,7 +204,6 @@ class EvidenceRAGAgent(BaseAgent):
         target_paper = state.get("paper")
 
         if target_paper:
-
             if hasattr(target_paper, "model_dump"):
                 papers.append(
                     target_paper.model_dump()
@@ -212,19 +211,50 @@ class EvidenceRAGAgent(BaseAgent):
             else:
                 papers.append(target_paper)
 
-        external_papers = (
-            state.get("metadata", {})
-            .get("external_papers", [])
-        )
+        # 1. Check metadata.external_papers
+        metadata = state.get("metadata", {}) or {}
+        external_papers = list(metadata.get("external_papers", []))
+
+        # 2. Check metadata.discovered_papers_metadata (from PaperSearchAgent)
+        active_claim_id = state.get("active_claim_id")
+        discovered_meta = metadata.get("discovered_papers_metadata", {})
+        if isinstance(discovered_meta, dict) and active_claim_id in discovered_meta:
+            external_papers.extend(discovered_meta[active_claim_id])
+        elif isinstance(discovered_meta, list):
+            external_papers.extend(discovered_meta)
+
+        # 3. Check active claim's discovered_papers_metadata
+        claims = state.get("claims", {})
+        if active_claim_id and active_claim_id in claims:
+            c_state = claims[active_claim_id]
+            claim_papers = (
+                getattr(c_state, "discovered_papers_metadata", [])
+                if not isinstance(c_state, dict)
+                else c_state.get("discovered_papers_metadata", [])
+            )
+            for cp in claim_papers:
+                if cp not in external_papers:
+                    external_papers.append(cp)
 
         for paper in external_papers:
-
             if hasattr(paper, "model_dump"):
-                papers.append(
-                    paper.model_dump()
-                )
+                p_dict = paper.model_dump()
+            elif isinstance(paper, dict):
+                p_dict = dict(paper)
             else:
-                papers.append(paper)
+                continue
+
+            # Ensure paper has an 'id' and readable content
+            if "id" not in p_dict or not p_dict["id"]:
+                p_dict["id"] = p_dict.get("arxiv_id") or p_dict.get("doi") or p_dict.get("title", "ext_paper")
+
+            if not p_dict.get("raw_text") and not p_dict.get("sections"):
+                abstract = p_dict.get("abstract", "")
+                findings = p_dict.get("key_findings", "")
+                title = p_dict.get("title", "")
+                p_dict["raw_text"] = f"Title: {title}\nAbstract: {abstract}\nKey Findings: {findings}".strip()
+
+            papers.append(p_dict)
 
         return papers
 
@@ -351,12 +381,10 @@ class EvidenceRAGAgent(BaseAgent):
             id=f"E-{uuid4().hex[:8]}",
             claim_id=claim["id"],
             source_paper_id=paper["id"],
-            source_title=paper.get(
-                "metadata",
-                {},
-            ).get(
-                "title",
-                paper["id"],
+            source_title=(
+                paper.get("title")
+                or (paper.get("metadata", {}).get("title") if isinstance(paper.get("metadata"), dict) else None)
+                or paper.get("id", "Unknown Paper")
             ),
             location=location,
             content=extracted.evidence_text,
