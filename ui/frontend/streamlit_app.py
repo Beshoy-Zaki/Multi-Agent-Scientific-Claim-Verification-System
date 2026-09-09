@@ -587,38 +587,52 @@ if st.session_state.get("pipeline_running", False):
                     tags = " ".join([f"`📊 {b}`" for b in benchmarks] + [f"`📈 {m}`" for m in metrics])
                     st.caption(f"Grounding Targets: {tags}")
 
-            # Select primary active claim
-            active_id = get_field(state, "active_claim_id") or (list(claims_dict.keys())[0] if claims_dict else None)
-            st.session_state.active_claim_id = active_id
-            if isinstance(state, dict):
-                state["active_claim_id"] = active_id
-            elif hasattr(state, "active_claim_id"):
-                state.active_claim_id = active_id
+            # Get list of all formalized claims to evaluate
+            claims_dict = get_field(state, "claims", {})
+            all_claim_ids = list(claims_dict.keys())
+            total_claims = len(all_claim_ids)
 
             st.markdown("---")
+            st.markdown(f"### 🔄 Investigating All Extracted Claims ({total_claims} Total)")
+            st.caption("Each claim undergoes independent Literature Grounded Search, Evidence Extraction, Support Case, Adversarial Attack, and Critic Peer Adjudication.")
 
-            if active_id:
+            # Instantiate verification agents
+            searcher = PaperSearchAgent()
+            rag = EvidenceRAGAgent()
+            support = SupportAgent()
+            attack = AttackAgent()
+            critic = CriticAgent()
+
+            # Iterate through each claim sequentially
+            for claim_idx, active_id in enumerate(all_claim_ids, 1):
+                st.markdown(f"## 🔬 Claim {claim_idx}/{total_claims}: `[{active_id}]`")
+
+                # Set active claim in state
+                st.session_state.active_claim_id = active_id
+                if isinstance(state, dict):
+                    state["active_claim_id"] = active_id
+                elif hasattr(state, "active_claim_id"):
+                    state.active_claim_id = active_id
+
+                claims_dict = get_field(state, "claims", {})
+                active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
+                active_claim = format_claim_item(get_field(active_cstate, "claim"))
+                st.info(f"Target Proposition: **{active_claim['statement']}**")
+
                 # ---------------------------------------------------------
                 # 3. Paper Search Agent
                 # ---------------------------------------------------------
-                active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
-                active_claim = format_claim_item(get_field(active_cstate, "claim"))
-                st.markdown(f"### 🌐 Step 3/8: Literature Discovery via Google Search Grounding (`PaperSearchAgent`)")
-                st.info(f"Targeting Claim **[{active_id}]**: *\"{active_claim['statement'][:120]}...\"*")
-
-                with st.spinner("Executing Google Grounded Search for peer publications and replications..."):
-                    searcher = PaperSearchAgent()
+                st.markdown(f"#### 🌐 Phase 3: Literature Discovery (`PaperSearchAgent`)")
+                with st.spinner(f"Executing Google Grounded Search for claim [{active_id}]..."):
                     state = searcher.execute(state)
-                    st.session_state.pipeline_step = 3
                     claims_dict = get_field(state, "claims", {})
                     active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
                     discovered_meta = get_field(active_cstate, "discovered_papers_metadata", [])
                     discovered_titles = get_field(active_cstate, "external_papers_found", [])
                     total_discovered = len(discovered_meta) if discovered_meta else len(discovered_titles)
-                    add_log("PaperSearchAgent", f"Retrieved {total_discovered} external citations/papers for claim [{active_id}].")
+                    add_log("PaperSearchAgent", f"Retrieved {total_discovered} external citations for [{active_id}].")
 
-                live_progress.progress(3 / 8)
-                st.success(f"🌐 Discovered **{total_discovered} relevant academic literature sources**:")
+                st.success(f"🌐 Discovered **{total_discovered} relevant literature sources** for [{active_id}]:")
 
                 if discovered_meta:
                     for p in discovered_meta:
@@ -647,53 +661,47 @@ if st.session_state.get("pipeline_running", False):
                     for t in discovered_titles:
                         st.markdown(f"- 📄 **{t}**")
 
-                st.markdown("---")
-
                 # ---------------------------------------------------------
                 # 4. Evidence RAG Agent
                 # ---------------------------------------------------------
-                st.markdown(f"### 📚 Step 4/8: Grounded Evidence Extraction & Bundling (`EvidenceRAGAgent`)")
-                with st.spinner("Extracting & verifying evidence passages across target paper and literature..."):
-                    rag = EvidenceRAGAgent()
+                st.markdown(f"#### 📚 Phase 4: Grounded Evidence Extraction & Bundling (`EvidenceRAGAgent`)")
+                with st.spinner(f"Extracting & verifying evidence passages for claim [{active_id}]..."):
                     state = rag.execute(state)
-                    st.session_state.pipeline_step = 4
                     ev_store = get_field(state, "global_evidence_store", {})
-                    evidence_items = list(ev_store.values()) if isinstance(ev_store, dict) else []
-                    add_log("EvidenceRAGAgent", f"Bundled {len(evidence_items)} evidence passages in global store.")
+                    claims_dict = get_field(state, "claims", {})
+                    active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
+                    bundle_ids = get_field(active_cstate, "evidence_bundle_ids", [])
+                    add_log("EvidenceRAGAgent", f"Bundled {len(bundle_ids)} evidence passages for [{active_id}].")
 
-                live_progress.progress(4 / 8)
-                st.success(f"📚 Extracted & bundled **{len(evidence_items)} claim-aware evidence units**:")
+                st.success(f"📚 Extracted & bundled **{len(bundle_ids)} evidence units** for [{active_id}]:")
 
-                with st.expander(f"🔍 Inspect Grounded Evidence Bundles ({len(evidence_items)} total)", expanded=True):
-                    for raw_b in evidence_items[:5]:
-                        b = format_evidence_item(raw_b)
-                        b_rel = b["relationship"]
-                        b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
-                        st.markdown(f"""
-                        <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 10px;">
-                            <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
-                            <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b['source_title']}</b> ({b['location'] or 'Document'})</span>
-                            <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #1E293B;">"{b['content'][:240]}..."</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                st.markdown("---")
+                with st.expander(f"🔍 Inspect Grounded Evidence Bundles for [{active_id}] ({len(bundle_ids)} total)", expanded=False):
+                    for bid in bundle_ids[:4]:
+                        raw_b = ev_store.get(bid) if isinstance(ev_store, dict) else None
+                        if raw_b:
+                            b = format_evidence_item(raw_b)
+                            b_rel = b["relationship"]
+                            b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
+                            st.markdown(f"""
+                            <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 10px;">
+                                <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
+                                <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b['source_title']}</b> ({b['location'] or 'Document'})</span>
+                                <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #1E293B;">"{b['content'][:240]}..."</p>
+                            </div>
+                            """, unsafe_allow_html=True)
 
                 # ---------------------------------------------------------
                 # 5. Support Agent
                 # ---------------------------------------------------------
-                st.markdown(f"### 🛡️ Step 5/8: Affirmative Case Construction (`SupportAgent`)")
-                with st.spinner("Synthesizing grounded affirmative argument with premises and evidence citations..."):
-                    support = SupportAgent()
+                st.markdown(f"#### 🛡️ Phase 5: Affirmative Case Construction (`SupportAgent`)")
+                with st.spinner(f"Synthesizing affirmative argument with premises for [{active_id}]..."):
                     state = support.execute(state)
-                    st.session_state.pipeline_step = 5
                     claims_dict = get_field(state, "claims", {})
                     active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
                     raw_sup = get_field(active_cstate, "support_argument")
                     sup_arg = format_argument_item(raw_sup)
                     add_log("SupportAgent", f"Constructed affirmative argument for [{active_id}].")
 
-                live_progress.progress(5 / 8)
                 if sup_arg:
                     st_strength = str(sup_arg.get("strength") or "MODERATE").upper()
                     st.markdown(f"""
@@ -708,29 +716,24 @@ if st.session_state.get("pipeline_running", False):
                     sup_premises = sup_arg.get("premises", [])
                     sup_citations = sup_arg.get("cited_evidence_ids", [])
                     if sup_premises:
-                        with st.expander("View Support Affirmative Premises", expanded=False):
+                        with st.expander(f"View Support Affirmative Premises [{active_id}]", expanded=False):
                             for p in sup_premises:
                                 st.write(f"• {p}")
                             if sup_citations:
                                 st.caption(f"Cited Evidence IDs: {', '.join(sup_citations)}")
 
-                st.markdown("---")
-
                 # ---------------------------------------------------------
                 # 6. Attack Agent
                 # ---------------------------------------------------------
-                st.markdown(f"### ⚔️ Step 6/8: Adversarial Attack & Boundary Testing (`AttackAgent`)")
-                with st.spinner("Searching counter-evidence and probing methodological vulnerabilities..."):
-                    attack = AttackAgent()
+                st.markdown(f"#### ⚔️ Phase 6: Adversarial Attack & Boundary Testing (`AttackAgent`)")
+                with st.spinner(f"Searching counter-evidence and probing vulnerabilities for [{active_id}]..."):
                     state = attack.execute(state)
-                    st.session_state.pipeline_step = 6
                     claims_dict = get_field(state, "claims", {})
                     active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
                     raw_atk = get_field(active_cstate, "attack_argument")
                     atk_arg = format_argument_item(raw_atk)
                     add_log("AttackAgent", f"Constructed adversarial counter-case for [{active_id}].")
 
-                live_progress.progress(6 / 8)
                 if atk_arg:
                     atk_strength = str(atk_arg.get("strength") or "MODERATE").upper()
                     st.markdown(f"""
@@ -746,7 +749,7 @@ if st.session_state.get("pipeline_running", False):
                     atk_limitations = atk_arg.get("identified_limitations", [])
                     atk_citations = atk_arg.get("cited_evidence_ids", [])
                     if atk_premises or atk_limitations:
-                        with st.expander("View Attack Counter-Premises & Vulnerabilities", expanded=False):
+                        with st.expander(f"View Attack Counter-Premises & Vulnerabilities [{active_id}]", expanded=False):
                             for p in atk_premises:
                                 st.write(f"• {p}")
                             if atk_limitations:
@@ -758,23 +761,18 @@ if st.session_state.get("pipeline_running", False):
                                 for link in atk_citations:
                                     st.markdown(f"- [{link}]({link})")
 
-                st.markdown("---")
-
                 # ---------------------------------------------------------
                 # 7. Critic Agent
                 # ---------------------------------------------------------
-                st.markdown(f"### ⚖️ Step 7/8: Adjudicating Debate & 4-Point Peer Audit (`CriticAgent`)")
-                with st.spinner("Impartially evaluating debate, verifying citations, and assessing reasoning soundness..."):
-                    critic = CriticAgent()
+                st.markdown(f"#### ⚖️ Phase 7: Adjudicating Debate & Verdict for [{active_id}] (`CriticAgent`)")
+                with st.spinner(f"Impartially evaluating debate, verifying citations & formulating verdict for [{active_id}]..."):
                     state = critic.execute(state)
-                    st.session_state.pipeline_step = 7
                     claims_dict = get_field(state, "claims", {})
                     active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
                     raw_verdict = get_field(active_cstate, "verdict")
                     verdict_dict = format_verdict_item(raw_verdict)
                     add_log("CriticAgent", f"Synthesized verdict for claim [{active_id}].")
 
-                live_progress.progress(7 / 8)
                 if verdict_dict:
                     v_type = verdict_dict.get("verdict", "Inconclusive")
                     conf = int((verdict_dict.get("confidence", 0.0) or 0.0) * 100)
@@ -784,7 +782,7 @@ if st.session_state.get("pipeline_running", False):
                     st.markdown(f"""
                     <div style="background: #F8FAFC; border: 2px solid #6366F1; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <h3 style="margin: 0; color: #4338CA;">⚖️ Final Verdict: {v_type}</h3>
+                            <h3 style="margin: 0; color: #4338CA;">⚖️ Final Verdict [{active_id}]: {v_type}</h3>
                             <span style="font-size: 1.2rem; font-weight: 800; color: #4338CA;">{conf}% Confidence</span>
                         </div>
                         <p style="margin: 8px 0 0 0; color: #334155; font-size: 0.95rem;"><b>Scientific Synthesis:</b> {synthesis}</p>
@@ -802,29 +800,42 @@ if st.session_state.get("pipeline_running", False):
                         with c4:
                             st.metric("Comparative Parity", "Fair ✅" if finding.get("fair_comparison") else "Asymmetric ❌")
 
+                # Step progress within multi-claim execution
+                cur_prog = 0.25 + 0.65 * (claim_idx / total_claims)
+                live_progress.progress(min(0.92, cur_prog))
                 st.markdown("---")
 
             # ---------------------------------------------------------
-            # 8. Supervisor Executive Summary
+            # 8. Supervisor Executive Summary (AT THE VERY END AFTER ALL CLAIMS ARE REVIEWED)
             # ---------------------------------------------------------
-            st.markdown("### 🧭 Step 8/8: Executive Summary Synthesis (`SupervisorAgent`)")
-            with st.spinner("Synthesizing multi-agent executive assessment report..."):
+            st.markdown(f"### 🧭 Step 8/8: Overarching Scientific Executive Summary (`SupervisorAgent`)")
+            st.info(f"Synthesizing meta-analysis across all **{total_claims} verified propositions**...")
+            with st.spinner("Synthesizing multi-agent executive assessment report across all claims..."):
                 supervisor = SupervisorAgent()
                 summary = supervisor.generate_executive_summary(state)
                 st.session_state.executive_summary = summary
                 st.session_state.pipeline_step = 8
-                add_log("SupervisorAgent", "Executive summary synthesized.")
+                add_log("SupervisorAgent", f"Executive summary synthesized across all {total_claims} claims.")
 
             live_progress.progress(1.0)
-            st.success("🧭 **SupervisorAgent** synthesized full scientific assessment report.")
-            with st.expander("📄 Preview Synthesized Executive Summary", expanded=False):
-                st.markdown(summary)
+            st.success(f"🧭 **SupervisorAgent** synthesized final assessment report across all {total_claims} claims.")
+            with st.expander("📄 Preview Synthesized Executive Summary", expanded=True):
+                with st.container(border=True):
+                    st.markdown(summary)
+
+            # Set active claim back to first claim for clean tab exploration
+            if all_claim_ids:
+                st.session_state.active_claim_id = all_claim_ids[0]
+                if isinstance(state, dict):
+                    state["active_claim_id"] = all_claim_ids[0]
+                elif hasattr(state, "active_claim_id"):
+                    state.active_claim_id = all_claim_ids[0]
 
             # Completion & state persistence
             st.session_state.state = state
             st.session_state.pipeline_running = False
             st.session_state.pipeline_completed = True
-            status_box.update(label="🎉 Multi-Agent Pipeline Execution Succeeded!", state="complete", expanded=True)
+            status_box.update(label="🎉 Multi-Agent Pipeline Execution Succeeded (All Claims Reviewed)!", state="complete", expanded=True)
             st.balloons()
 
         except Exception as exc:
@@ -856,8 +867,19 @@ with tab_stream:
     if state and claims_dict:
         st.write("Complete chronological trace of all 8 multi-agent verification phases:")
 
+        # Interactive Claim Switcher for Multi-Claim Trace
+        claim_keys = list(claims_dict.keys())
+        default_index = claim_keys.index(st.session_state.active_claim_id) if st.session_state.active_claim_id in claim_keys else 0
+        active_id = st.selectbox(
+            "🎯 Select Verified Claim to Inspect Verification Trace & Dialectic Debate:",
+            claim_keys,
+            index=default_index,
+            format_func=lambda cid: f"[{cid}] {format_claim_item(get_field(claims_dict[cid], 'claim'))['statement'][:100]}...",
+            key="stream_tab_claim_select",
+        )
+        st.session_state.active_claim_id = active_id
+
         # Summary Metric Bar
-        active_id = st.session_state.active_claim_id or (list(claims_dict.keys())[0] if claims_dict else None)
         s_cstate = claims_dict.get(active_id) if active_id else None
         s_verdict = format_verdict_item(get_field(s_cstate, "verdict"))
         v_str = s_verdict.get("verdict", "Pending") if s_verdict else "Pending"
