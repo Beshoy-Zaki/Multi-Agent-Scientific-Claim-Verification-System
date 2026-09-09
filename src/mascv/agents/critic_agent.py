@@ -33,7 +33,7 @@ class CriticResult(BaseModel):
     )
 
     generalization: str = Field(
-        default="Valid within the stated benchmark architectures.",
+        default="Valid within evaluated experimental conditions.",
         description="Explain whether the claim can be generalized beyond the studied conditions.",
     )
 
@@ -55,7 +55,7 @@ class CriticResult(BaseModel):
     )
 
     key_issue: str = Field(
-        default="Trade-offs between adaptation rank and task complexity.",
+        default="Methodological constraints and comparative evaluation parity.",
         description="State the most important issue affecting the verdict.",
     )
 
@@ -65,12 +65,12 @@ class CriticResult(BaseModel):
     )
 
     overall_summary: str = Field(
-        default="The affirmative case is strongly backed by quantitative benchmark metrics.",
+        default="The affirmative case is evaluated against empirical counterpoints.",
         description="Compare the Support and Attack arguments and explain which is stronger.",
     )
 
     final_assessment: str = Field(
-        default="The scientific claim is empirically substantiated by primary literature results.",
+        default="The scientific claim is assessed against available empirical evidence.",
         description="Give the final scientific assessment and explain the verdict.",
     )
 
@@ -249,16 +249,16 @@ Select exactly one Verdict:
             except Exception as raw_exc:
                 logger.warning("CriticAgent JSON extraction failed: %s. Using heuristic fallback.", raw_exc)
                 critic_result = CriticResult(
-                    citation_grounding="Empirical evidence cited directly from published results.",
-                    experimental_parity="Equivalent downstream evaluation tasks.",
-                    generalization="Valid across evaluated transformer architectures.",
-                    comparison="Direct evaluation of parameter efficiency.",
-                    verdict="Supported",
-                    confidence=0.90,
-                    key_issue="Evaluation focused on GLUE and language benchmarks.",
-                    winner="Support",
-                    overall_summary="The experimental parameter reduction is quantitatively proven.",
-                    final_assessment="The claim is supported by direct empirical data and replication.",
+                    citation_grounding="Automated critique could not verify citation grounding due to model inference failure.",
+                    experimental_parity="Comparative experimental conditions could not be reliably determined.",
+                    generalization="Generalization bounds could not be evaluated automatically.",
+                    comparison="Direct comparison between arguments was inconclusive.",
+                    verdict="Inconclusive",
+                    confidence=0.0,
+                    key_issue="Automated critique fallback invoked due to model extraction failure.",
+                    winner="Neither",
+                    overall_summary="The dialectic debate could not be reliably adjudicated due to model failure.",
+                    final_assessment="Inconclusive: Automated synthesis failed to parse model outputs. Requires manual scientific inspection.",
                     sources=[],
                 )
 
@@ -269,16 +269,17 @@ Select exactly one Verdict:
             "Unsupported": VerdictType.UNSUPPORTED,
             "Inconclusive": VerdictType.INCONCLUSIVE,
         }
-        verdict_type = v_map.get(critic_result.verdict, VerdictType.SUPPORTED)
+        verdict_type = v_map.get(critic_result.verdict, VerdictType.INCONCLUSIVE)
 
+        is_fallback = critic_result.verdict == "Inconclusive" and critic_result.confidence == 0.0
         finding = CriticFinding(
-            citation_valid=True,
-            reasoning_sound=True,
+            citation_valid=not is_fallback,
+            reasoning_sound=not is_fallback,
             overgeneralization_detected=(
                 "limit" in critic_result.generalization.lower()
                 or "overgeneral" in critic_result.generalization.lower()
             ),
-            fair_comparison=True,
+            fair_comparison=not is_fallback,
             critique_notes=critic_result.key_issue,
         )
 

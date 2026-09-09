@@ -259,9 +259,9 @@ Rules:
                 stance="FOR",
                 premises=[item.get("content", "")[:200] for item in supporting_evidence[:3]],
                 cited_evidence_ids=valid_first,
-                conclusion=f"The empirical evidence extracted from the publications directly substantiates the claim.",
-                strength="Strong" if len(valid_first) >= 2 else "Moderate",
-                identified_limitations=["Evaluated within the scope of tested benchmarks."],
+                conclusion="Retrieved primary evidence passages report observations consistent with the proposition, subject to verification.",
+                strength="Moderate" if len(valid_first) >= 2 else "Weak",
+                identified_limitations=["Automated argument synthesis fallback invoked; limited to direct passage matching."],
             )
 
         valid_ids = {

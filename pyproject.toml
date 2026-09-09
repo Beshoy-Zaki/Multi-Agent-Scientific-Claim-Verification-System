@@ -10,7 +10,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "Beshoy Zaki", email = "beshoy.zaki@example.com" }
+    { name = "Beshoy Zaki", email = "beshoy21102005@gmail.com" },
+    { name = "Jana Kassem", email = "janaosmaneng@gmail.com" },
+    { name = "Verina Hany", email = "verinahany15@gmail.com" },
+    { name = "Zeina Elsadek", email = "zeinaelsadek25@gmail.com" }
 ]
 keywords = [
     "multi-agent",
@@ -35,10 +38,11 @@ dependencies = [
     "pydantic>=2.7.0",
     "pydantic-settings>=2.2.0",
     "langchain>=0.2.0",
+    "langchain-community>=0.2.0",
     "langgraph>=0.0.60",
-    "openai>=1.30.0",
-    "anthropic>=0.26.0",
+    "google-genai>=0.1.0",
     "google-generativeai>=0.5.0",
+    "langchain-google-genai>=2.0.0",
     "pypdf>=4.2.0",
     "pdfplumber>=0.11.0",
     "arxiv>=2.1.0",
@@ -47,15 +51,15 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "requests>=2.31.0",
     "beautifulsoup4>=4.12.0",
+    "duckduckgo-search>=6.0.0",
+    "ddgs>=1.0.0",
     "tqdm>=4.66.0",
     "rich>=13.7.0",
     "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.1",
     "streamlit>=1.35.0",
     "fastapi>=0.111.0",
     "uvicorn>=0.30.0",
-    "langchain-google-genai>=4.4.0",
-    "pytest>=9.1.1",
-    "python-dotenv>=1.2.3",
 ]
 
 [project.optional-dependencies]

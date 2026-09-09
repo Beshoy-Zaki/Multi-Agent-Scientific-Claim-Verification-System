@@ -182,7 +182,7 @@ EXTERNAL CRITIQUES, BENCHMARKS & DISCUSSION:
 Rules:
 1. Examine methodological assumptions, benchmark bounds, practical trade-offs, and potential overgeneralizations.
 2. Formulate 2-3 specific, rigorous attack points based on the scientific context and external critiques.
-3. Identify vulnerabilities (e.g. low-rank bottlenecking, complex reasoning degradation, memory overhead trade-offs).
+3. Identify vulnerabilities (e.g. unstated boundary constraints, methodological confounds, evaluation trade-offs).
 4. Distinguish between evidence that directly contradicts vs. evidence that narrows the claim's scope.
 5. Extract exact URLs from the external evidence into 'evidence_found' to ground the attack.
 6. Provide a realistic attack strength (Strong, Moderate, or Weak).
@@ -194,11 +194,11 @@ Rules:
             logger.warning("AttackAgent structured generation failed: %s. Using heuristic fallback.", exc)
             attack_result = AttackResult(
                 attack_points=[
-                    "Potential representation collapse when adaptation rank is constrained below task complexity bounds.",
-                    "Evaluation restricted to specific baseline architectures and standardized benchmarks without domain shift stress-testing."
+                    "Generalizability may be bounded by specific baseline conditions, metrics, or sample constraints.",
+                    "Potential sensitivity to unstated hyperparameters or boundary conditions under stress-testing.",
                 ],
                 evidence_found=[],
-                vulnerabilities=["Performance degradation on out-of-distribution reasoning tasks."],
+                vulnerabilities=["Boundary condition constraints and limited cross-domain stress-testing."],
                 strength="Moderate",
             )
 

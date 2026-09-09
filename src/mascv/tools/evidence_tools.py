@@ -1,6 +1,8 @@
 """Scientific evidence verification tools: Google Search Grounding with relaxed criteria and arithmetic validation."""
 
+import ast
 import logging
+import operator
 import os
 import re
 from typing import Optional
@@ -58,8 +60,8 @@ def _duckduckgo_fallback(query: str) -> str:
     """Fallback search using DuckDuckGo with simplified keywords if Google Search is unavailable."""
     if DDGS is None:
         return (
-            f"Adversarial search for '{query}': High-dimensional scaling limits, representation "
-            f"bottlenecks, and out-of-distribution reasoning degradation reported in empirical benchmarks."
+            f"External web search unavailable (DDGS client not installed). "
+            f"Could not retrieve external counter-evidence for: '{query}'."
         )
 
     try:
@@ -81,10 +83,33 @@ def _duckduckgo_fallback(query: str) -> str:
         return "\n\n".join(output)
     except Exception as exc:
         logger.warning("DuckDuckGo fallback search error: %s", exc)
-        return (
-            f"Adversarial search for '{query}': Low-rank bottlenecking and capacity limits "
-            f"observed on complex reasoning benchmarks."
-        )
+        return f"External web search failed ({exc}). No external critique findings retrieved."
+
+
+_SAFE_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+
+def _eval_ast_node(node: ast.AST) -> float:
+    """Safely evaluate AST arithmetic nodes without executing arbitrary code."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return float(node.value)
+    if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_OPERATORS:
+        left = _eval_ast_node(node.left)
+        right = _eval_ast_node(node.right)
+        if isinstance(node.op, ast.Div) and right == 0:
+            raise ZeroDivisionError("division by zero")
+        return _SAFE_OPERATORS[type(node.op)](left, right)
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_OPERATORS:
+        operand = _eval_ast_node(node.operand)
+        return _SAFE_OPERATORS[type(node.op)](operand)
+    raise ValueError(f"Unsupported AST node: {type(node).__name__}")
 
 
 @tool
@@ -109,17 +134,24 @@ def search_scientific_evidence(query: str) -> str:
 @tool
 def calculate(expression: str) -> str:
     """
-    Perform a basic mathematical calculation.
+    Perform a basic mathematical calculation (+, -, *, /).
     Useful for checking percentages, differences,
     ratios, and numerical claims.
     """
-
     allowed = set("0123456789+-*/(). ")
-
     if not all(char in allowed for char in expression):
         return "Error: Invalid mathematical expression."
 
+    if "**" in expression or len(expression) > 100:
+        return "Error: Exponentiation or excessively long expressions are not allowed."
+
     try:
-        return str(eval(expression, {"__builtins__": None}, {}))
+        parsed = ast.parse(expression.strip(), mode="eval")
+        result = _eval_ast_node(parsed.body)
+        if result.is_integer():
+            return str(int(result))
+        return f"{result:.6g}"
+    except ZeroDivisionError:
+        return "Error: Division by zero."
     except Exception:
         return "Error: Could not calculate expression."

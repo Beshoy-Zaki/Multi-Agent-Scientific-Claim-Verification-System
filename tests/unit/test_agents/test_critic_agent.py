@@ -138,5 +138,6 @@ def test_critic_agent_fallback_on_llm_exception():
     active_claim = out_state["claims"]["C1"]
     assert "verdict" in active_claim
     assert active_claim["is_finalized"] is True
-    assert active_claim["verdict"].verdict == VerdictType.SUPPORTED
+    assert active_claim["verdict"].verdict == VerdictType.INCONCLUSIVE
+    assert active_claim["verdict"].confidence == 0.0
 
