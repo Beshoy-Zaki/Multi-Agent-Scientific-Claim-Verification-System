@@ -1,4 +1,4 @@
-﻿"""Research paper representation and metadata schemas."""
+"""Research paper representation and metadata schemas."""
 
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
@@ -22,6 +22,10 @@ class PaperMetadata(BaseModel):
     url: Optional[str] = None
     year: Optional[int] = None
     venue: Optional[str] = None
+    relationship: Optional[str] = None
+    relevance_score: Optional[float] = None
+    relevance_rationale: Optional[str] = None
+    key_findings: Optional[str] = None
 
 
 class ResearchPaper(BaseModel):

@@ -1,10 +1,30 @@
-﻿agent:
+agent:
   name: "SupervisorAgent"
   role: "Investigation Manager & Global State Controller"
-  model: "gpt-4o"
-  temperature: 0.1
+  model: "gemma-4-26b-a4b-it"
+  temperature: 0.2
+  thinking_level: "HIGH"
   parameters:
     max_search_cycles: 3
     min_confidence_to_finalize: 0.70
     min_independent_sources: 2
     require_replication_check: true
+
+prompts:
+  system_prompt: |
+    You are an expert scientific peer reviewer and meta-analyst. 
+    Your objective is to provide a rigorous, objective, evidence-grounded executive summary of a scientific paper based on the multi-agent investigation results. 
+    Highlight confirmed findings, expose methodological vulnerabilities or contested claims, and assess the paper's overall empirical reproducibility.
+  user_prompt: |    
+    Target Research Paper: "{paper_title}"
+    Total Investigated Claims: {total_claims}
+    - Supported: {supported_count}
+    - Partially Supported: {partially_supported_count}
+    - Unsupported / Refuted: {unsupported_count}
+    Detailed Claim Findings & Critic Verdicts:
+    {verdicts_breakdown}
+    Please produce a structured Executive Summary containing:
+    1. Overall Assessment: High-level credibility of the paper's core contributions.
+    2. Key Verified Findings: Strongest claims supported by independent replication.
+    3. Methodological Concerns & Caveats: Claims lacking independent sources, low confidence, or contested by counterarguments.
+    4. Verdict Summary Table: Brief takeaway for each investigated proposition.
