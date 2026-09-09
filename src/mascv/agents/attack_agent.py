@@ -1,17 +1,19 @@
 """Attack Agent: Investigates weaknesses, contradictory findings, and limits of a claim."""
 
+import json
 import logging
 import os
 import re
 from typing import Any, Dict, List, Literal, Optional
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from mascv.agents.base import BaseAgent
 from mascv.models.argument import Argument
 from mascv.models.evidence import EvidenceBundle
 from mascv.tools.evidence_tools import search_scientific_evidence, calculate
+from mascv.utils.text_processing import extract_json_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,19 @@ class AttackResult(BaseModel):
         description="Overall strength of the attack: Strong, Moderate, or Weak.",
     )
 
+    @field_validator("strength", mode="before")
+    @classmethod
+    def normalize_strength(cls, v: Any) -> str:
+        if isinstance(v, str):
+            s = v.strip().title()
+            if "Strong" in s:
+                return "Strong"
+            if "Weak" in s:
+                return "Weak"
+            if "Mod" in s:
+                return "Moderate"
+        return "Moderate"
+
 
 class AttackAgent(BaseAgent):
     """
@@ -65,7 +80,15 @@ class AttackAgent(BaseAgent):
                 model=model_name,
                 temperature=temperature,
                 max_retries=2,
+                timeout=60.0,
             )
+
+        from mascv.utils.llm import LLMClient
+        self.llm_client = LLMClient(
+            model_name=self.config.get("model", "gemma-4-26b-a4b-it"),
+            temperature=float(self.config.get("temperature", 0.2)),
+            thinking_level="minimal",
+        )
 
         self.structured_llm = self.llm.with_structured_output(AttackResult)
         self.tools = [search_scientific_evidence, calculate]
@@ -188,19 +211,38 @@ Rules:
 6. Provide a realistic attack strength (Strong, Moderate, or Weak).
 """
 
+        json_prompt = (
+            prompt
+            + "\n\nFormat your response as a valid JSON object matching this schema exactly:\n"
+            "{\n"
+            '  "attack_points": ["point 1", "point 2"],\n'
+            '  "evidence_found": ["URL or finding 1", "URL or finding 2"],\n'
+            '  "vulnerabilities": ["vulnerability 1"],\n'
+            '  "strength": "Strong" | "Moderate" | "Weak"\n'
+            "}\n"
+        )
+
+        attack_result = None
         try:
-            attack_result = self.structured_llm.invoke(prompt)
+            raw_text = self.llm_client.generate(prompt=json_prompt)
+            json_str = extract_json_from_text(raw_text)
+            data = json.loads(json_str) if json_str else {}
+            attack_result = AttackResult(**data)
         except Exception as exc:
-            logger.warning("AttackAgent structured generation failed: %s. Using heuristic fallback.", exc)
-            attack_result = AttackResult(
-                attack_points=[
-                    "Generalizability may be bounded by specific baseline conditions, metrics, or sample constraints.",
-                    "Potential sensitivity to unstated hyperparameters or boundary conditions under stress-testing.",
-                ],
-                evidence_found=[],
-                vulnerabilities=["Boundary condition constraints and limited cross-domain stress-testing."],
-                strength="Moderate",
-            )
+            logger.info("AttackAgent LLMClient generation failed: %s. Trying structured output.", exc)
+            try:
+                attack_result = self.structured_llm.invoke(prompt)
+            except Exception as raw_exc:
+                logger.warning("AttackAgent structured generation failed: %s. Using heuristic fallback.", raw_exc)
+                attack_result = AttackResult(
+                    attack_points=[
+                        "Generalizability may be bounded by specific baseline conditions, metrics, or sample constraints.",
+                        "Potential sensitivity to unstated hyperparameters or boundary conditions under stress-testing.",
+                    ],
+                    evidence_found=[],
+                    vulnerabilities=["Boundary condition constraints and limited cross-domain stress-testing."],
+                    strength="Moderate",
+                )
 
         # Build canonical Argument model for dialectic synthesis
         premises = attack_result.attack_points or ["Methodological limitations exist under constrained evaluation settings."]

@@ -44,7 +44,11 @@ class LLMClient:
         raw_thinking = thinking_level or os.getenv("THINKING_LEVEL", "minimal")
         self.thinking_level = "high" if str(raw_thinking).lower() in ["high", "true", "1"] else "minimal"
 
-        self.client = genai.Client(api_key=self.api_key) if self.api_key else None
+        self.client = (
+            genai.Client(api_key=self.api_key, http_options=types.HttpOptions(timeout=90_000))
+            if self.api_key
+            else None
+        )
 
         logger.info(
             "Initialized LLMClient (model=%s, temp=%.2f, grounding=%s, thinking=%s)",

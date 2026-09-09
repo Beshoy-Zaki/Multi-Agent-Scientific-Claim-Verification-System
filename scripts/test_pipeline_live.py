@@ -36,7 +36,16 @@ def main():
     p("=" * 80)
 
     # 1. Parse Paper
-    pdf_path = os.path.join("data", "sample_inputs", "lora_2106.09685.pdf")
+    if len(sys.argv) > 1:
+        pdf_path = sys.argv[1]
+        if not os.path.exists(pdf_path) and os.path.exists(pdf_path + ".pdf"):
+            pdf_path = pdf_path + ".pdf"
+    else:
+        pdf_path = os.path.join("data", "sample_inputs", "lora_2106.09685.pdf")
+
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"Target PDF not found at '{pdf_path}'")
+
     p(f"\n[1] Ingesting PDF: {pdf_path}")
     parser = PDFParser()
     paper = parser.parse(pdf_path)

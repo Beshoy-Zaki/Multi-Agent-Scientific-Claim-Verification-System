@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any, Dict, List, Literal, Optional
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from mascv.agents.base import BaseAgent
@@ -79,6 +79,43 @@ class CriticResult(BaseModel):
         description="Exact URLs of scientific sources used by the Attack Agent.",
     )
 
+    @field_validator("verdict", mode="before")
+    @classmethod
+    def normalize_verdict(cls, v: Any) -> str:
+        if isinstance(v, str):
+            s = v.strip().title()
+            if "Partially" in s:
+                return "Partially Supported"
+            if "Unsupported" in s or "Refuted" in s:
+                return "Unsupported"
+            if "Inconclusive" in s:
+                return "Inconclusive"
+            if "Support" in s:
+                return "Supported"
+        return "Supported"
+
+    @field_validator("winner", mode="before")
+    @classmethod
+    def normalize_winner(cls, v: Any) -> str:
+        if isinstance(v, str):
+            s = v.strip().title()
+            if "Attack" in s:
+                return "Attack"
+            if "Neither" in s:
+                return "Neither"
+            if "Support" in s:
+                return "Support"
+        return "Support"
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def normalize_confidence(cls, v: Any) -> float:
+        try:
+            val = float(v)
+            return max(0.0, min(1.0, val))
+        except Exception:
+            return 0.85
+
 
 class CriticAgent(BaseAgent):
     """
@@ -103,7 +140,15 @@ class CriticAgent(BaseAgent):
                 model=model_name,
                 temperature=temperature,
                 max_retries=2,
+                timeout=60.0,
             )
+
+        from mascv.utils.llm import LLMClient
+        self.llm_client = LLMClient(
+            model_name=self.config.get("model", "gemma-4-26b-a4b-it"),
+            temperature=float(self.config.get("temperature", 0.1)),
+            thinking_level="minimal",
+        )
 
         self.structured_llm = self.llm.with_structured_output(CriticResult)
         self.tools = [calculate]
@@ -218,36 +263,50 @@ Select exactly one Verdict:
 - "Inconclusive": Insufficient or contradictory data prevents a decisive verdict.
 """
 
+        json_prompt = (
+            prompt
+            + "\n\nFormat your response as a valid JSON object matching this schema exactly:\n"
+            "{\n"
+            '  "citation_grounding": "string",\n'
+            '  "experimental_parity": "string",\n'
+            '  "generalization": "string",\n'
+            '  "comparison": "string",\n'
+            '  "verdict": "Supported" | "Partially Supported" | "Unsupported" | "Inconclusive",\n'
+            '  "confidence": float (0.0 to 1.0),\n'
+            '  "key_issue": "string",\n'
+            '  "winner": "Support" | "Attack" | "Neither",\n'
+            '  "overall_summary": "string",\n'
+            '  "final_assessment": "string",\n'
+            '  "sources": ["url1", "url2"]\n'
+            "}\n"
+        )
+
         critic_result = None
         try:
-            critic_result = self.structured_llm.invoke(prompt)
+            raw_text = self.llm_client.generate(prompt=json_prompt)
+            json_str = extract_json_from_text(raw_text)
+            data = json.loads(json_str) if json_str else {}
+            critic_result = CriticResult(**data)
         except Exception as exc:
-            logger.info("CriticAgent structured generation failed: %s. Trying raw LLM with JSON extraction.", exc)
+            logger.info("CriticAgent LLMClient generation failed: %s. Trying fallback LLM.", exc)
             try:
-                json_prompt = (
-                    prompt
-                    + "\n\nFormat your response as a valid JSON object matching this schema exactly:\n"
-                    "{\n"
-                    '  "citation_grounding": "string",\n'
-                    '  "experimental_parity": "string",\n'
-                    '  "generalization": "string",\n'
-                    '  "comparison": "string",\n'
-                    '  "verdict": "Supported" | "Partially Supported" | "Unsupported" | "Inconclusive",\n'
-                    '  "confidence": float (0.0 to 1.0),\n'
-                    '  "key_issue": "string",\n'
-                    '  "winner": "Support" | "Attack" | "Neither",\n'
-                    '  "overall_summary": "string",\n'
-                    '  "final_assessment": "string",\n'
-                    '  "sources": ["url1", "url2"]\n'
-                    "}\n"
-                )
                 raw_response = self.llm.invoke(json_prompt)
-                raw_text = raw_response.content if hasattr(raw_response, "content") else str(raw_response)
+                content = getattr(raw_response, "content", raw_response)
+                if isinstance(content, list):
+                    text_parts = [
+                        p.get("text", "")
+                        for p in content
+                        if isinstance(p, dict) and p.get("type") == "text"
+                    ]
+                    raw_text = "\n".join(text_parts) if text_parts else str(content)
+                else:
+                    raw_text = str(content)
+
                 json_str = extract_json_from_text(raw_text)
-                data = json.loads(json_str)
+                data = json.loads(json_str) if json_str else {}
                 critic_result = CriticResult(**data)
             except Exception as raw_exc:
-                logger.warning("CriticAgent JSON extraction failed: %s. Using heuristic fallback.", raw_exc)
+                logger.warning("CriticAgent raw LLM failed: %s. Using heuristic fallback.", raw_exc)
                 critic_result = CriticResult(
                     citation_grounding="Automated critique could not verify citation grounding due to model inference failure.",
                     experimental_parity="Comparative experimental conditions could not be reliably determined.",

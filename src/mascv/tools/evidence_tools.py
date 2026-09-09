@@ -24,6 +24,8 @@ except ImportError:
 
 def _google_search_evidence(query: str) -> str:
     """Use Google Search Grounding via Gemma 4 to find reasonable counter-evidence, criticisms, and limitations."""
+    words = [w for w in re.sub(r"[^\w\s]", " ", query).split() if len(w) > 2]
+    concise_query = " ".join(words[:12]) if words else query
     client = LLMClient(
         model_name="gemma-4-26b-a4b-it",
         temperature=0.2,
@@ -31,7 +33,7 @@ def _google_search_evidence(query: str) -> str:
         thinking_level="minimal",
     )
     prompt = f"""Search Google for credible critiques, limitations, drawbacks, empirical benchmarks, or counter-evidence concerning this proposition:
-"{query}"
+"{concise_query}"
 
 GUIDELINES:
 - Relaxed filtering: the results do NOT need to be strictly peer-reviewed academic papers. They can be technical blog posts (e.g., Hugging Face, Weights & Biases, OpenAI, Towards Data Science), empirical benchmarks, engineering postmortems, GitHub issues/discussions, or papers.
@@ -68,7 +70,7 @@ def _duckduckgo_fallback(query: str) -> str:
         clean_q = re.sub(r"[^\w\s]", " ", query)
         words = [w for w in clean_q.split() if len(w) > 2][:5]
         search_query = " ".join(words) + " limitations"
-        results = DDGS().text(search_query.strip(), max_results=3)
+        results = DDGS(timeout=10).text(search_query.strip(), max_results=3)
         if not results:
             return "No search results found via fallback."
 
