@@ -146,6 +146,21 @@ CUSTOM_CSS = """
     background-color: #F1F5F9;
     color: #475569;
 }
+
+/* Literature Search Card */
+.search-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-left: 4px solid #0284C7;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    transition: all 0.2s ease;
+}
+.search-card:hover {
+    border-left-color: #0369A1;
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.12);
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -256,82 +271,281 @@ with st.sidebar:
 
 
 # -----------------------------------------------------------------------------
-# Multi-Agent Execution Handler (with Live Progress)
+# Multi-Agent Execution Handler (with Real-Time Live Streaming)
 # -----------------------------------------------------------------------------
 if st.session_state.get("pipeline_running", False):
     pdf_path = st.session_state.get("target_pdf")
     
-    with st.status("🤖 Executing MASCV Multi-Agent Pipeline...", expanded=True) as status_box:
+    with st.status("🤖 Executing MASCV Multi-Agent Pipeline in Real Time...", expanded=True) as status_box:
         try:
-            # 1. Ingest PDF
-            st.write("📄 **[Step 1/8]** Ingesting & parsing target research paper with `PDFParser`...")
-            parser = PDFParser()
-            paper = parser.parse(pdf_path)
-            state = InvestigationState(paper=paper)
-            st.session_state.pipeline_step = 1
-            add_log("PDFParser", f"Parsed '{paper.metadata.title}' into {len(paper.sections)} sections.")
+            live_progress = st.progress(0.0)
 
+            # ---------------------------------------------------------
+            # 1. Paper Ingestion
+            # ---------------------------------------------------------
+            st.markdown("### 📄 Step 1/8: Ingesting & Structuring Paper (`PDFParser`)")
+            with st.spinner("Extracting text and structural sections from PDF..."):
+                parser = PDFParser()
+                paper = parser.parse(pdf_path)
+                state = InvestigationState(paper=paper)
+                st.session_state.pipeline_step = 1
+                add_log("PDFParser", f"Parsed '{paper.metadata.title}' into {len(paper.sections)} sections.")
+
+            live_progress.progress(1 / 8)
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.markdown(f"**Title:** {paper.metadata.title or 'Untitled Publication'}")
+                if paper.metadata.authors:
+                    st.caption(f"Authors: {', '.join(paper.metadata.authors)}")
+            with col2:
+                st.metric("Sections Parsed", len(paper.sections))
+            with col3:
+                words_count = len(paper.raw_text.split()) if paper.raw_text else 0
+                st.metric("Word Count", f"{words_count:,}")
+
+            with st.expander(f"📑 Preview Parsed Sections ({len(paper.sections)} detected)", expanded=False):
+                for sec in paper.sections[:6]:
+                    st_title = getattr(sec, "title", "Section") or "Section"
+                    st_text = getattr(sec, "content", "") or ""
+                    st.markdown(f"• **{st_title}** ({len(st_text.split())} words)")
+
+            st.markdown("---")
+
+            # ---------------------------------------------------------
             # 2. Extract Claims
-            st.write("📋 **[Step 2/8]** Formalizing testable claims using `ClaimAnalystAgent` with Gemma 4...")
-            analyst = ClaimAnalystAgent()
-            state = analyst.execute(state)
-            st.session_state.pipeline_step = 2
-            add_log("ClaimAnalystAgent", f"Formulated {len(state.claims)} testable scientific claims.")
+            # ---------------------------------------------------------
+            st.markdown("### 📋 Step 2/8: Formalizing Testable Claims (`ClaimAnalystAgent` via Gemma 4)")
+            with st.spinner("Deconstructing publication into formalized scientific propositions..."):
+                analyst = ClaimAnalystAgent()
+                state = analyst.execute(state)
+                st.session_state.pipeline_step = 2
+                add_log("ClaimAnalystAgent", f"Formulated {len(state.claims)} testable scientific claims.")
 
-            # Select primary active claim (e.g. C1)
+            live_progress.progress(2 / 8)
+            st.success(f"🎯 **ClaimAnalystAgent** formalized **{len(state.claims)} testable scientific claims**:")
+
+            for cid, cstate in state.claims.items():
+                claim = cstate.claim
+                ctype = claim.claim_type.value if hasattr(claim.claim_type, "value") else str(claim.claim_type)
+                st.markdown(f"""
+                <div class="claim-card" style="border-left: 5px solid #6366F1; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 700; color: #4338CA;">[{cid}] {claim.subject or 'Scientific Proposition'}</span>
+                        <span class="tag-pill" style="background-color: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
+                    </div>
+                    <p style="margin: 6px 0 4px 0; color: #1E293B;"><b>Statement:</b> {claim.statement}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                if claim.benchmarks or claim.metrics:
+                    tags = " ".join([f"`📊 {b}`" for b in claim.benchmarks] + [f"`📈 {m}`" for m in claim.metrics])
+                    st.caption(f"Grounding Targets: {tags}")
+
+            # Select primary active claim
             active_id = state.active_claim_id or (list(state.claims.keys())[0] if state.claims else None)
             st.session_state.active_claim_id = active_id
             state.active_claim_id = active_id
 
+            st.markdown("---")
+
             if active_id:
+                # ---------------------------------------------------------
                 # 3. Paper Search Agent
-                st.write(f"🌐 **[Step 3/8]** Discovering external literature via `PaperSearchAgent` with Google Search Grounding...")
-                searcher = PaperSearchAgent()
-                state = searcher.execute(state)
-                st.session_state.pipeline_step = 3
-                discovered = state.claims[active_id].external_papers_found if hasattr(state.claims[active_id], "external_papers_found") else []
-                add_log("PaperSearchAgent", f"Retrieved {len(discovered)} external citations/papers for claim [{active_id}].")
+                # ---------------------------------------------------------
+                active_claim = state.claims[active_id].claim
+                st.markdown(f"### 🌐 Step 3/8: Literature Discovery via Google Search Grounding (`PaperSearchAgent`)")
+                st.info(f"Targeting Claim **[{active_id}]**: *\"{active_claim.statement[:120]}...\"*")
 
+                with st.spinner("Executing Google Grounded Search for peer publications and replications..."):
+                    searcher = PaperSearchAgent()
+                    state = searcher.execute(state)
+                    st.session_state.pipeline_step = 3
+                    discovered_meta = getattr(state.claims[active_id], "discovered_papers_metadata", [])
+                    discovered_titles = getattr(state.claims[active_id], "external_papers_found", [])
+                    total_discovered = len(discovered_meta) if discovered_meta else len(discovered_titles)
+                    add_log("PaperSearchAgent", f"Retrieved {total_discovered} external citations/papers for claim [{active_id}].")
+
+                live_progress.progress(3 / 8)
+                st.success(f"🌐 Discovered **{total_discovered} relevant academic literature sources**:")
+
+                if discovered_meta:
+                    for p in discovered_meta:
+                        p_url = p.url or f"https://scholar.google.com/scholar?q={p.title.replace(' ', '+')}"
+                        p_score = int((p.relevance_score or 0.85) * 100) if p.relevance_score else 85
+                        p_rel = p.relationship or "RELEVANT"
+                        st.markdown(f"""
+                        <div class="search-card">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <a href="{p_url}" target="_blank" style="font-weight: 700; color: #0284C7; text-decoration: none;">📄 {p.title}</a>
+                                <span class="tag-pill" style="background: #E0F2FE; color: #0369A1;">{p_rel} • {p_score}% RELEVANCE</span>
+                            </div>
+                            <div style="font-size: 0.85rem; color: #64748B; margin-top: 4px;">
+                                Authors: {', '.join(p.authors[:3]) if p.authors else 'Academic Authors'} ({p.year or 'N/A'}) • Venue: {p.venue or 'Repository'}
+                            </div>
+                            {f'<div style="font-size: 0.85rem; color: #334155; margin-top: 4px; font-style: italic;"><b>Findings:</b> {p.relevance_rationale or p.key_findings}</div>' if (p.relevance_rationale or p.key_findings) else ''}
+                        </div>
+                        """, unsafe_allow_html=True)
+                elif discovered_titles:
+                    for t in discovered_titles:
+                        st.markdown(f"- 📄 **{t}**")
+
+                st.markdown("---")
+
+                # ---------------------------------------------------------
                 # 4. Evidence RAG Agent
-                st.write(f"📚 **[Step 4/8]** Extracting & bundling evidence units using `EvidenceRAGAgent`...")
-                rag = EvidenceRAGAgent()
-                state = rag.execute(state)
-                st.session_state.pipeline_step = 4
-                add_log("EvidenceRAGAgent", f"Bundled evidence passages in global store.")
+                # ---------------------------------------------------------
+                st.markdown(f"### 📚 Step 4/8: Grounded Evidence Extraction & Bundling (`EvidenceRAGAgent`)")
+                with st.spinner("Extracting & verifying evidence passages across target paper and literature..."):
+                    rag = EvidenceRAGAgent()
+                    state = rag.execute(state)
+                    st.session_state.pipeline_step = 4
+                    evidence_items = list(state.global_evidence_store.values())
+                    add_log("EvidenceRAGAgent", f"Bundled {len(evidence_items)} evidence passages in global store.")
 
+                live_progress.progress(4 / 8)
+                st.success(f"📚 Extracted & bundled **{len(evidence_items)} claim-aware evidence units**:")
+
+                with st.expander(f"🔍 Inspect Grounded Evidence Bundles ({len(evidence_items)} total)", expanded=True):
+                    for b in evidence_items[:5]:
+                        b_rel = b.relationship.value if hasattr(b.relationship, "value") else str(b.relationship)
+                        b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
+                        st.markdown(f"""
+                        <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 10px;">
+                            <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
+                            <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b.source_title}</b> ({b.location or 'Document'})</span>
+                            <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #1E293B;">"{b.content[:240]}..."</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                st.markdown("---")
+
+                # ---------------------------------------------------------
                 # 5. Support Agent
-                st.write(f"🛡️ **[Step 5/8]** Formulating affirmative case with `SupportAgent`...")
-                support = SupportAgent()
-                state = support.execute(state)
-                st.session_state.pipeline_step = 5
-                add_log("SupportAgent", f"Constructed affirmative argument for [{active_id}].")
+                # ---------------------------------------------------------
+                st.markdown(f"### 🛡️ Step 5/8: Affirmative Case Construction (`SupportAgent`)")
+                with st.spinner("Synthesizing grounded affirmative argument with premises and evidence citations..."):
+                    support = SupportAgent()
+                    state = support.execute(state)
+                    st.session_state.pipeline_step = 5
+                    sup_arg = state.claims[active_id].support_argument
+                    add_log("SupportAgent", f"Constructed affirmative argument for [{active_id}].")
 
+                live_progress.progress(5 / 8)
+                if sup_arg:
+                    st.markdown(f"""
+                    <div class="debate-box support-box">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span class="agent-pill agent-support">🛡️ SUPPORT AGENT</span>
+                            <span style="font-weight: 700; color: #047857;">STANCE: FOR • STRENGTH: {sup_arg.strength.upper()}</span>
+                        </div>
+                        <p style="font-weight: 600; color: #065F46; margin-bottom: 6px;">Conclusion: {sup_arg.conclusion}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    with st.expander("View Support Affirmative Premises", expanded=False):
+                        for p in sup_arg.premises:
+                            st.write(f"• {p}")
+                        if sup_arg.cited_evidence_ids:
+                            st.caption(f"Cited Evidence IDs: {', '.join(sup_arg.cited_evidence_ids)}")
+
+                st.markdown("---")
+
+                # ---------------------------------------------------------
                 # 6. Attack Agent
-                st.write(f"⚔️ **[Step 6/8]** Searching counter-evidence & constructing attack case with `AttackAgent`...")
-                attack = AttackAgent()
-                state = attack.execute(state)
-                st.session_state.pipeline_step = 6
-                add_log("AttackAgent", f"Constructed adversarial counter-case for [{active_id}].")
+                # ---------------------------------------------------------
+                st.markdown(f"### ⚔️ Step 6/8: Adversarial Attack & Boundary Testing (`AttackAgent`)")
+                with st.spinner("Searching counter-evidence and probing methodological vulnerabilities..."):
+                    attack = AttackAgent()
+                    state = attack.execute(state)
+                    st.session_state.pipeline_step = 6
+                    atk_arg = state.claims[active_id].attack_argument
+                    add_log("AttackAgent", f"Constructed adversarial counter-case for [{active_id}].")
 
+                live_progress.progress(6 / 8)
+                if atk_arg:
+                    st.markdown(f"""
+                    <div class="debate-box attack-box">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span class="agent-pill agent-attack">⚔️ ATTACK AGENT</span>
+                            <span style="font-weight: 700; color: #BE123C;">STANCE: AGAINST • STRENGTH: {atk_arg.strength.upper()}</span>
+                        </div>
+                        <p style="font-weight: 600; color: #9F1239; margin-bottom: 6px;">Counter-Conclusion: {atk_arg.conclusion}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    with st.expander("View Attack Counter-Premises & Vulnerabilities", expanded=False):
+                        for p in atk_arg.premises:
+                            st.write(f"• {p}")
+                        if atk_arg.identified_limitations:
+                            st.write("**Identified Limitations:**")
+                            for lim in atk_arg.identified_limitations:
+                                st.caption(f"⚠️ {lim}")
+                        if atk_arg.cited_evidence_ids:
+                            st.write("**External Counter-Evidence Links:**")
+                            for link in atk_arg.cited_evidence_ids:
+                                st.markdown(f"- [{link}]({link})")
+
+                st.markdown("---")
+
+                # ---------------------------------------------------------
                 # 7. Critic Agent
-                st.write(f"⚖️ **[Step 7/8]** Adjudicating debate & evaluating grounding with `CriticAgent`...")
-                critic = CriticAgent()
-                state = critic.execute(state)
-                st.session_state.pipeline_step = 7
-                add_log("CriticAgent", f"Synthesized verdict for claim [{active_id}].")
+                # ---------------------------------------------------------
+                st.markdown(f"### ⚖️ Step 7/8: Adjudicating Debate & 4-Point Peer Audit (`CriticAgent`)")
+                with st.spinner("Impartially evaluating debate, verifying citations, and assessing reasoning soundness..."):
+                    critic = CriticAgent()
+                    state = critic.execute(state)
+                    st.session_state.pipeline_step = 7
+                    verdict_obj = state.claims[active_id].verdict
+                    add_log("CriticAgent", f"Synthesized verdict for claim [{active_id}].")
 
+                live_progress.progress(7 / 8)
+                if verdict_obj:
+                    v_type = verdict_obj.verdict.value if hasattr(verdict_obj.verdict, "value") else str(verdict_obj.verdict)
+                    conf = int((verdict_obj.confidence or 0.0) * 100)
+                    finding = verdict_obj.critic_finding
+
+                    st.markdown(f"""
+                    <div style="background: #F8FAFC; border: 2px solid #6366F1; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin: 0; color: #4338CA;">⚖️ Final Verdict: {v_type}</h3>
+                            <span style="font-size: 1.2rem; font-weight: 800; color: #4338CA;">{conf}% Confidence</span>
+                        </div>
+                        <p style="margin: 8px 0 0 0; color: #334155; font-size: 0.95rem;"><b>Scientific Synthesis:</b> {verdict_obj.synthesis_summary}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if finding:
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            st.metric("Citation Grounding", "Verified ✅" if getattr(finding, "citation_valid", False) else "Unverified ❌")
+                        with c2:
+                            st.metric("Reasoning Soundness", "Sound ✅" if getattr(finding, "reasoning_sound", False) else "Flawed ❌")
+                        with c3:
+                            st.metric("Overgeneralization", "Clean ✅" if not getattr(finding, "overgeneralization_detected", False) else "Detected ⚠️")
+                        with c4:
+                            st.metric("Comparative Parity", "Fair ✅" if getattr(finding, "fair_comparison", False) else "Asymmetric ❌")
+
+                st.markdown("---")
+
+            # ---------------------------------------------------------
             # 8. Supervisor Executive Summary
-            st.write("🧭 **[Step 8/8]** Synthesizing executive report with `SupervisorAgent`...")
-            supervisor = SupervisorAgent()
-            summary = supervisor.generate_executive_summary(state)
-            st.session_state.executive_summary = summary
-            st.session_state.pipeline_step = 8
-            add_log("SupervisorAgent", "Executive summary synthesized.")
+            # ---------------------------------------------------------
+            st.markdown("### 🧭 Step 8/8: Executive Summary Synthesis (`SupervisorAgent`)")
+            with st.spinner("Synthesizing multi-agent executive assessment report..."):
+                supervisor = SupervisorAgent()
+                summary = supervisor.generate_executive_summary(state)
+                st.session_state.executive_summary = summary
+                st.session_state.pipeline_step = 8
+                add_log("SupervisorAgent", "Executive summary synthesized.")
 
+            live_progress.progress(1.0)
+            st.success("🧭 **SupervisorAgent** synthesized full scientific assessment report.")
+            with st.expander("📄 Preview Synthesized Executive Summary", expanded=False):
+                st.markdown(summary)
+
+            # Completion & state persistence
             st.session_state.state = state
             st.session_state.pipeline_running = False
-            status_box.update(label="✅ Pipeline Execution Complete!", state="complete", expanded=False)
-            st.rerun()
+            st.session_state.pipeline_completed = True
+            status_box.update(label="🎉 Multi-Agent Pipeline Execution Succeeded!", state="complete", expanded=True)
+            st.balloons()
 
         except Exception as exc:
             status_box.update(label=f"❌ Pipeline Failed: {exc}", state="error", expanded=True)
@@ -340,15 +554,169 @@ if st.session_state.get("pipeline_running", False):
 
 
 # -----------------------------------------------------------------------------
-# Main Dashboard Multi-View Tabs
+# Main Dashboard Multi-View Tabs (with Live Activity Stream)
 # -----------------------------------------------------------------------------
-tab_paper, tab_claims, tab_evidence, tab_debate, tab_verdict = st.tabs([
+tab_stream, tab_paper, tab_claims, tab_evidence, tab_debate, tab_verdict = st.tabs([
+    "⚡ Live Activity Stream",
     "📄 Paper Overview",
     "🎯 Extracted Claims",
     "🔍 Evidence Explorer",
     "⚔️ Dialectic Debate Arena",
     "⚖️ Verdict & Scientific Report",
 ])
+
+state = st.session_state.state
+
+# -----------------------------------------------------------------------------
+# TAB 0: Live Activity Stream
+# -----------------------------------------------------------------------------
+with tab_stream:
+    st.header("⚡ Real-Time Multi-Agent Activity Stream")
+    if state and state.claims:
+        st.write("Complete chronological trace of all 8 multi-agent verification phases:")
+
+        # Summary Metric Bar
+        active_id = st.session_state.active_claim_id or (list(state.claims.keys())[0] if state.claims else None)
+        s_cstate = state.claims.get(active_id) if active_id else None
+        s_verdict = s_cstate.verdict if s_cstate and hasattr(s_cstate, "verdict") else None
+        v_str = s_verdict.verdict.value if s_verdict and hasattr(s_verdict.verdict, "value") else (str(s_verdict.verdict) if s_verdict else "Pending")
+        conf_str = f"{int(s_verdict.confidence * 100)}%" if s_verdict and s_verdict.confidence else "N/A"
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+        with m1:
+            st.metric("Total Claims", len(state.claims))
+        with m2:
+            st.metric("Active Claim", active_id or "None")
+        with m3:
+            papers_found_count = len(getattr(s_cstate, "discovered_papers_metadata", [])) or len(getattr(s_cstate, "external_papers_found", [])) if s_cstate else 0
+            st.metric("Discovered Sources", papers_found_count)
+        with m4:
+            st.metric("Evidence Bundles", len(state.global_evidence_store))
+        with m5:
+            st.metric("Active Verdict", f"{v_str} ({conf_str})")
+
+        st.markdown("---")
+
+        # 1. Ingested Paper Summary
+        with st.expander("📄 Phase 1: Ingested Paper & Structure (`PDFParser`)", expanded=True):
+            if state.paper:
+                p_meta = state.paper.metadata
+                st.markdown(f"**Publication Title:** {p_meta.title or 'Untitled Paper'}")
+                if p_meta.authors:
+                    st.caption(f"Authors: {', '.join(p_meta.authors)}")
+                st.write(f"Parsed **{len(state.paper.sections)} sections** across **{len(state.paper.raw_text.split()):,} words**.")
+
+        # 2. Extracted Claims
+        with st.expander(f"🎯 Phase 2: Formalized Scientific Claims ({len(state.claims)} extracted via `ClaimAnalystAgent`)", expanded=True):
+            for cid, cstate in state.claims.items():
+                c = cstate.claim
+                ctype = c.claim_type.value if hasattr(c.claim_type, "value") else str(c.claim_type)
+                is_act = (cid == active_id)
+                card_bg = "#EEF2FF" if is_act else "#F8FAFC"
+                st.markdown(f"""
+                <div style="background: {card_bg}; border: 1px solid #CBD5E1; border-left: 4px solid {'#4F46E5' if is_act else '#94A3B8'}; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <b>[{cid}] {c.subject or 'Scientific Proposition'}</b>
+                        <span class="tag-pill" style="background: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
+                    </div>
+                    <p style="margin: 4px 0; color: #1E293B;"><b>Statement:</b> {c.statement}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # 3. Discovered Literature
+        if s_cstate:
+            disc_meta = getattr(s_cstate, "discovered_papers_metadata", [])
+            disc_titles = getattr(s_cstate, "external_papers_found", [])
+            with st.expander(f"🌐 Phase 3: External Literature via Google Search Grounding ({len(disc_meta) or len(disc_titles)} discovered for [{active_id}])", expanded=True):
+                if disc_meta:
+                    for p in disc_meta:
+                        p_url = p.url or f"https://scholar.google.com/scholar?q={p.title.replace(' ', '+')}"
+                        p_score = int((p.relevance_score or 0.85) * 100) if p.relevance_score else 85
+                        p_rel = p.relationship or "RELEVANT"
+                        st.markdown(f"""
+                        <div class="search-card">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <a href="{p_url}" target="_blank" style="font-weight: 700; color: #0284C7; text-decoration: none;">📄 {p.title}</a>
+                                <span class="tag-pill" style="background: #E0F2FE; color: #0369A1;">{p_rel} • {p_score}% MATCH</span>
+                            </div>
+                            <div style="font-size: 0.85rem; color: #64748B; margin-top: 4px;">
+                                Authors: {', '.join(p.authors[:3]) if p.authors else 'Academic Authors'} ({p.year or 'N/A'}) • Venue: {p.venue or 'Academic Repository'}
+                            </div>
+                            {f'<div style="font-size: 0.85rem; color: #334155; margin-top: 4px; font-style: italic;"><b>Findings:</b> {p.relevance_rationale or p.key_findings}</div>' if (p.relevance_rationale or p.key_findings) else ''}
+                        </div>
+                        """, unsafe_allow_html=True)
+                elif disc_titles:
+                    for t in disc_titles:
+                        st.markdown(f"- 📄 **{t}**")
+
+        # 4. Evidence Extraction
+        with st.expander(f"📚 Phase 4: Grounded Evidence Store ({len(state.global_evidence_store)} bundles extracted via `EvidenceRAGAgent`)", expanded=True):
+            for b in list(state.global_evidence_store.values())[:6]:
+                b_rel = b.relationship.value if hasattr(b.relationship, "value") else str(b.relationship)
+                b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
+                st.markdown(f"""
+                <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 8px;">
+                    <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
+                    <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b.source_title}</b> ({b.location or 'Document'})</span>
+                    <p style="margin: 2px 0 0 0; font-size: 0.88rem; color: #1E293B;">"{b.content[:220]}..."</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # 5 & 6. Dialectic Debate
+        if s_cstate:
+            with st.expander("⚔️ Phases 5 & 6: Dialectic Debate Arena (`SupportAgent` vs `AttackAgent`)", expanded=True):
+                dcol1, dcol2 = st.columns(2)
+                with dcol1:
+                    sup = s_cstate.support_argument
+                    if sup:
+                        st.markdown(f"""
+                        <div class="debate-box support-box">
+                            <span class="agent-pill agent-support">🛡️ SUPPORT AGENT</span>
+                            <span style="font-weight: 700; color: #047857;">STANCE: FOR ({sup.strength})</span>
+                            <p style="margin-top: 6px; font-weight: 600;">{sup.conclusion}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        for p in sup.premises:
+                            st.caption(f"• {p}")
+                with dcol2:
+                    atk = s_cstate.attack_argument
+                    if atk:
+                        st.markdown(f"""
+                        <div class="debate-box attack-box">
+                            <span class="agent-pill agent-attack">⚔️ ATTACK AGENT</span>
+                            <span style="font-weight: 700; color: #BE123C;">STANCE: AGAINST ({atk.strength})</span>
+                            <p style="margin-top: 6px; font-weight: 600;">{atk.conclusion}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        for p in atk.premises:
+                            st.caption(f"• {p}")
+
+        # 7. Critic Verdict
+        if s_verdict:
+            with st.expander("⚖️ Phase 7: Critic Agent Adjudication & 4-Point Peer Audit", expanded=True):
+                st.markdown(f"**Final Synthesized Verdict:** `{v_str}` ({conf_str} Confidence)")
+                st.info(f"**Scientific Synthesis:** {s_verdict.synthesis_summary}")
+                f_obj = s_verdict.critic_finding
+                if f_obj:
+                    qc1, qc2, qc3, qc4 = st.columns(4)
+                    with qc1:
+                        st.metric("Grounding", "Verified ✅" if getattr(f_obj, "citation_valid", False) else "Unverified ❌")
+                    with qc2:
+                        st.metric("Soundness", "Sound ✅" if getattr(f_obj, "reasoning_sound", False) else "Flawed ❌")
+                    with qc3:
+                        st.metric("Overgeneralization", "Clean ✅" if not getattr(f_obj, "overgeneralization_detected", False) else "Detected ⚠️")
+                    with qc4:
+                        st.metric("Parity", "Fair ✅" if getattr(f_obj, "fair_comparison", False) else "Asymmetric ❌")
+
+        # 8. Executive Summary
+        exec_text = st.session_state.get("executive_summary")
+        if exec_text:
+            with st.expander("🧭 Phase 8: Executive Scientific Assessment Summary (`SupervisorAgent`)", expanded=True):
+                st.markdown(exec_text)
+
+    else:
+        st.info("👋 No multi-agent activity recorded yet. In the sidebar, select a paper and click **▶️ Run Full Multi-Agent Pipeline** to watch all agents execute live!")
+
 
 state = st.session_state.state
 
