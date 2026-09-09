@@ -3,7 +3,6 @@ agent:
   role: "Search-Grounded Adversarial Literature Discovery Engine"
   model: "gemma-4-26b-a4b-it"
   temperature: 0.1
-  thinking_level: "HIGH"
   parameters:
     max_papers: 5
     enable_grounding: true

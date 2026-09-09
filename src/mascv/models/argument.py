@@ -1,4 +1,4 @@
-﻿"""Adversarial argument schemas for Support, Attack, and Critic agents."""
+"""Adversarial argument schemas for Support, Attack, and Critic agents."""
 
 from typing import List
 from pydantic import BaseModel, Field
@@ -6,13 +6,13 @@ from pydantic import BaseModel, Field
 
 class Argument(BaseModel):
     """An evidence-grounded argument formed by Support or Attack agent."""
-    agent_name: str
-    claim_id: str
-    stance: str  # "FOR" or "AGAINST"
+    agent_name: str = Field(default="SupportAgent")
+    claim_id: str = Field(default="")
+    stance: str = Field(default="FOR")  # "FOR" or "AGAINST"
     premises: List[str] = Field(default_factory=list)
     cited_evidence_ids: List[str] = Field(default_factory=list)
-    conclusion: str
-    strength: str  # "Strong", "Moderate", "Weak"
+    conclusion: str = Field(default="")
+    strength: str = Field(default="Moderate")  # "Strong", "Moderate", "Weak"
     identified_limitations: List[str] = Field(default_factory=list)
 
 

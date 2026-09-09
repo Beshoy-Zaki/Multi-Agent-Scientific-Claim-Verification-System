@@ -1,8 +1,8 @@
-﻿agent:
+agent:
   name: "EvidenceRAGAgent"
   role: "Claim-Aware Evidence Extractor & Bundler"
-  model: "gpt-4o-mini"
-  temperature: 0.1
+  model: "gemma-4-26b-a4b-it"
+  temperature: 0.2
   parameters:
     chunking_strategy: "agentic" # agentic vs fixed
     embedding_model: "BAAI/bge-large-en-v1.5"

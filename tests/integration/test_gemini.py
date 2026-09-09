@@ -11,7 +11,7 @@ def test_gemini_connection():
     assert os.getenv("GOOGLE_API_KEY")
 
     model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemma-4-26b-a4b-it",
         temperature=0,
     )
 

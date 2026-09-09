@@ -1,11 +1,11 @@
-"""Unified LLM client for Google Gemma 4 (a4b/31b) with optional Google Search Grounding."""
+"""Unified LLM client for Google Gemma 4 using the official google-genai SDK."""
 
-import json
 import logging
 import os
 from typing import Optional
 from dotenv import load_dotenv
-import requests
+from google import genai
+from google.genai import types
 
 from mascv.utils.logger import get_logger
 
@@ -39,11 +39,12 @@ class LLMClient:
         self.model_name = raw_model.replace("models/", "")
         self.temperature = temperature
         self.enable_grounding = enable_grounding
-        self.thinking_level = (
-            thinking_level
-            if thinking_level is not None
-            else os.getenv("THINKING_LEVEL", "HIGH")
-        )
+        
+        # Gemma 4 strictly supports thinking_level as 'minimal' (disabled/fast) or 'high' (deep reasoning)
+        raw_thinking = thinking_level or os.getenv("THINKING_LEVEL", "minimal")
+        self.thinking_level = "high" if str(raw_thinking).lower() in ["high", "true", "1"] else "minimal"
+
+        self.client = genai.Client(api_key=self.api_key) if self.api_key else None
 
         logger.info(
             "Initialized LLMClient (model=%s, temp=%.2f, grounding=%s, thinking=%s)",
@@ -60,74 +61,40 @@ class LLMClient:
         enable_grounding: Optional[bool] = None,
         thinking_level: Optional[str] = None,
     ) -> str:
-        """Generate text completion with optional live Google Search Grounding and configurable thinking level."""
-        if not self.api_key:
+        """Generate text completion using official google-genai SDK with Search Grounding."""
+        if not self.client:
             raise ValueError("GOOGLE_API_KEY is required to call the model API.")
 
         use_grounding = (
             self.enable_grounding if enable_grounding is None else enable_grounding
         )
-        active_thinking = (
-            self.thinking_level if thinking_level is None else thinking_level
-        )
+        
+        t_level = self.thinking_level
+        if thinking_level is not None:
+            t_level = "high" if str(thinking_level).lower() in ["high", "true", "1"] else "minimal"
 
-        # Using streamGenerateContent for fast streaming and resilience against timeouts
-        endpoint = "streamGenerateContent" if use_grounding else "generateContent"
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.model_name}:{endpoint}?key={self.api_key}"
-        )
-
-        generation_config = {
+        config_args = {
             "temperature": self.temperature,
-        }
-        if active_thinking:
-            generation_config["thinkingConfig"] = {
-                "thinkingLevel": active_thinking.upper()
-            }
-
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": generation_config,
+            "thinking_config": types.ThinkingConfig(thinking_level=t_level),
         }
 
         if system_prompt:
-            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+            config_args["system_instruction"] = system_prompt
 
         if use_grounding:
-            # Enables live Google Search Grounding on Gemma 4 a4b
-            payload["tools"] = [{"googleSearch": {}}]
+            config_args["tools"] = [{"google_search": {}}]
 
-        headers = {"Content-Type": "application/json"}
-        timeout = 120 if use_grounding else 60
+        config = types.GenerateContentConfig(**config_args)
 
         try:
-            response = requests.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=timeout,
-                stream=use_grounding,
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config,
             )
-
-            if response.status_code != 200:
-                logger.error("API error %d: %s", response.status_code, response.text)
-                raise RuntimeError(f"API error ({response.status_code}): {response.text}")
-
-            # Parse response chunks (streamGenerateContent returns a JSON array)
-            data = response.json()
-            chunks = data if isinstance(data, list) else [data]
-
-            full_text = []
-            for chunk in chunks:
-                for candidate in chunk.get("candidates", []):
-                    for part in candidate.get("content", {}).get("parts", []):
-                        # Skip internal reasoning thoughts; collect only the output text
-                        if not part.get("thought") and "text" in part:
-                            full_text.append(part["text"])
-
-            return "".join(full_text)
+            return response.text or ""
 
         except Exception as exc:
-            logger.error("LLM generation failed: %s", exc)
+            logger.error("Gemma 4 generation failed: %s", exc)
             raise
+

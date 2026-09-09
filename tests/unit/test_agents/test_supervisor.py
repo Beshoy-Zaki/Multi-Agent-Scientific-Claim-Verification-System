@@ -25,7 +25,9 @@ def supervisor():
             "user_prompt": "Summary of {paper_title}: {total_claims} claims. Breakdown: {verdicts_breakdown}",
         },
     }
-    return SupervisorAgent(config=config)
+    agent = SupervisorAgent(config=config)
+    agent.llm_client = None
+    return agent
 
 
 @pytest.fixture

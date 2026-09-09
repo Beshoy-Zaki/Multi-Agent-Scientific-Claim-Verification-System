@@ -1,8 +1,8 @@
-﻿agent:
+agent:
   name: "SupportAgent"
   role: "Proponent Evidence-Grounded Reasoner"
-  model: "gpt-4o"
-  temperature: 0.3
+  model: "gemma-4-26b-a4b-it"
+  temperature: 0.2
   parameters:
     target_relationship: "SUPPORTS"
     focus_areas:

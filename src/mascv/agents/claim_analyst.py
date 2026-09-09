@@ -67,24 +67,30 @@ class ClaimAnalystAgent(BaseAgent):
         return state
 
     def _get_target_paper_text(self, state: InvestigationState) -> str:
-        """Provide the full, complete paper text directly without artificial truncation or section summarization."""
+        """Provide target paper text, respecting model context limits."""
         if not state.paper:
             return state.metadata.get("raw_paper_text", "")
 
-        # If raw_text is populated, pass the entire paper text directly
-        if state.paper.raw_text and state.paper.raw_text.strip():
-            return state.paper.raw_text
-
-        # If parsed sections are available, assemble all sections in full without truncation
+        # Assemble from sections if available
         if state.paper.sections:
             parts: List[str] = []
             if state.paper.metadata and state.paper.metadata.abstract:
                 parts.append(f"Abstract:\n{state.paper.metadata.abstract}")
             for s in state.paper.sections:
                 parts.append(f"Section {s.title}:\n{s.content}")
-            return "\n\n".join(parts)
+            text = "\n\n".join(parts)
+        elif state.paper.raw_text and state.paper.raw_text.strip():
+            text = state.paper.raw_text
+        else:
+            text = state.metadata.get("raw_paper_text", "")
 
-        return state.metadata.get("raw_paper_text", "")
+        # Guard against input token limit on Gemma 4 free tier (16,000 tokens ≈ 40,000 chars)
+        max_chars = 18000
+        if len(text) > max_chars:
+            logger.info(f"Limiting paper text to first {max_chars:,} chars to respect model token quota.")
+            text = text[:max_chars]
+
+        return text
 
     def extract_claims(self, paper_text: str, paper_id: str = "paper_1") -> List[Claim]:
         """Formalize raw paper statements into structured Claim objects using Gemma 4."""

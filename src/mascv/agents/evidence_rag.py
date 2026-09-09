@@ -79,7 +79,7 @@ class EvidenceRAGAgent(BaseAgent):
         self.extractor = extractor or EvidenceExtractor(
             model_name=self.config.get(
                 "model",
-                "gemini-2.5-flash",
+                "gemma-4-26b-a4b-it",
             )
         )
 
@@ -99,28 +99,29 @@ class EvidenceRAGAgent(BaseAgent):
 
         papers = self._get_papers(state)
 
+        all_chunks = []
+        for paper in papers:
+            all_chunks.extend(self._create_chunks(paper))
+
         all_evidence = []
 
-        for paper in papers:
-
-            chunks = self._create_chunks(paper)
-
-            if not chunks:
-                continue
+        if all_chunks:
+            params = self.config.get("parameters", {}) if isinstance(self.config, dict) else {}
+            top_k_candidates = int(params.get("top_k_candidates", 15)) if isinstance(params, dict) else 15
+            rerank_top_k = int(params.get("rerank_top_k", 5)) if isinstance(params, dict) else 5
 
             retrieved = self.retriever.retrieve(
                 query=claim_text,
-                chunks=chunks,
-                top_k=10,
+                chunks=all_chunks,
+                top_k=top_k_candidates,
             )
 
             ranked = rerank_chunks(
                 retrieved,
-                top_k=5,
+                top_k=rerank_top_k,
             )
 
             for chunk in ranked:
-
                 extracted = self.extractor.extract(
                     claim=claim_text,
                     chunk=chunk["text"],
@@ -129,9 +130,10 @@ class EvidenceRAGAgent(BaseAgent):
                 if not extracted.relevant:
                     continue
 
+                chunk_paper = chunk.get("paper") or (papers[0] if papers else {})
                 evidence = self._build_bundle(
                     claim=claim,
-                    paper=paper,
+                    paper=chunk_paper,
                     chunk=chunk,
                     extracted=extracted,
                 )
@@ -317,6 +319,7 @@ class EvidenceRAGAgent(BaseAgent):
                                 "section": section_title,
                                 "page_number": page_number,
                                 "paper_id": paper["id"],
+                                "paper": paper,
                             }
                         )
 
@@ -353,6 +356,7 @@ class EvidenceRAGAgent(BaseAgent):
                         "section": "Unknown",
                         "page_number": None,
                         "paper_id": paper["id"],
+                        "paper": paper,
                     }
                 )
 
