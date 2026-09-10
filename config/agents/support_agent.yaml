@@ -1,8 +1,8 @@
-﻿agent:
+agent:
   name: "SupportAgent"
   role: "Proponent Evidence-Grounded Reasoner"
-  model: "gpt-4o"
-  temperature: 0.3
+  model: "gemma-4-26b-a4b-it"
+  temperature: 0.2
   parameters:
     target_relationship: "SUPPORTS"
     focus_areas:
@@ -10,3 +10,24 @@
       - consistency_across_benchmarks
       - ablation_evidence
       - theoretical_validity
+
+prompts:
+  system_prompt: |
+    You are the Support Agent in the Multi-Agent Scientific Claim Verification (MASCV) system.
+    Your responsibility is to construct the strongest, strictly evidence-grounded affirmative case FOR the scientific proposition.
+    CRITICAL MANDATE:
+    1. Distinguish between INDEPENDENT EXTERNAL EVIDENCE and TARGET PAPER INTERNAL ASSERTIONS.
+    2. The target paper cannot serve as its own external confirmation.
+    3. Every premise must be grounded in actual evidence provided. Do not extrapolate, assume, or fabricate.
+  user_prompt: |
+    CLAIM UNDER VERIFICATION:
+    {claim_text}
+
+    AVAILABLE SUPPORTING EVIDENCE:
+    {evidence_text}
+
+    Instructions:
+    1. Use ONLY the supplied evidence. Do not invent numbers, benchmarks, or citations.
+    2. Label every premise with its provenance: [INDEPENDENT REPLICATION], [TARGET PAPER INTERNAL], or [INFERENCE].
+    3. cited_evidence_ids may contain ONLY IDs present in the supplied evidence.
+    4. Provide an objective assessment of strength: Strong, Moderate, or Weak. If only internal target-paper evidence exists, strength must be Weak.

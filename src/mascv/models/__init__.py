@@ -1,7 +1,7 @@
-﻿"""Data models and schemas for the MASCV system."""
+"""Data models and schemas for the MASCV system."""
 
 from mascv.models.claim import Claim, ClaimType
-from mascv.models.evidence import EvidenceBundle, EvidenceRelationship
+from mascv.models.evidence import EvidenceBundle, EvidenceRelationship, SourceType
 from mascv.models.argument import Argument, AdversarialDebate
 from mascv.models.verdict import Verdict, VerdictType, ScientificReport
 from mascv.models.paper import PaperMetadata, ResearchPaper, DocumentSection
@@ -11,6 +11,7 @@ __all__ = [
     "ClaimType",
     "EvidenceBundle",
     "EvidenceRelationship",
+    "SourceType",
     "Argument",
     "AdversarialDebate",
     "Verdict",

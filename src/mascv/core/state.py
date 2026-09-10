@@ -1,4 +1,4 @@
-﻿"""Investigation state representations across the multi-agent graph."""
+"""Investigation state representations across the multi-agent graph."""
 
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
@@ -14,6 +14,7 @@ class ClaimInvestigationState(BaseModel):
     claim: Claim
     iteration_count: int = 0
     external_papers_found: List[str] = Field(default_factory=list)
+    discovered_papers_metadata: List[Any] = Field(default_factory=list)
     evidence_bundle_ids: List[str] = Field(default_factory=list)
     support_argument: Optional[Argument] = None
     attack_argument: Optional[Argument] = None
@@ -21,6 +22,17 @@ class ClaimInvestigationState(BaseModel):
     verdict: Optional[Verdict] = None
     is_finalized: bool = False
     status_message: str = "Initialized"
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        setattr(self, key, value)
 
 
 class InvestigationState(BaseModel):
@@ -33,3 +45,22 @@ class InvestigationState(BaseModel):
     max_iterations: int = 3
     is_completed: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        setattr(self, key, value)
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        val = getattr(self, key, None)
+        if val is None:
+            setattr(self, key, default)
+            return default
+        return val
+

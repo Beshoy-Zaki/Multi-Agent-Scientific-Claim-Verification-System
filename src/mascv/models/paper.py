@@ -1,7 +1,7 @@
-﻿"""Research paper representation and metadata schemas."""
+"""Research paper representation and metadata schemas."""
 
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 
 class DocumentSection(BaseModel):
@@ -22,6 +22,12 @@ class PaperMetadata(BaseModel):
     url: Optional[str] = None
     year: Optional[int] = None
     venue: Optional[str] = None
+    relationship: Optional[str] = None
+    relevance_score: Optional[float] = None
+    relevance_rationale: Optional[str] = None
+    key_findings: Optional[str] = None
+    source_type: str = "TARGET_PAPER"
+    is_independent: StrictBool = False
 
 
 class ResearchPaper(BaseModel):

@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -81,3 +81,6 @@ htmlcov/
 *.out
 *.synctex.gz
 *.toc
+
+# External and Scratch Folders
+Critic and Attacking agents/

@@ -1,20 +1,426 @@
-﻿"""RAG / Evidence Agent: Claim-aware document parsing, chunking, and evidence bundling."""
+"""RAG / Evidence Agent."""
 
 from typing import Any, Dict, List
+from uuid import uuid4
+
+from langchain.tools import tool
+
 from mascv.agents.base import BaseAgent
-from mascv.models.evidence import EvidenceBundle
+from mascv.models.evidence import (
+    EvidenceBundle,
+    EvidenceRelationship,
+    SourceType,
+)
+
+from mascv.rag.document_parser import parse_pdf
+from mascv.rag.retriever import HybridRetriever
+from mascv.rag.retriever.reranker import rerank_chunks
+from mascv.rag.evidence_extractor import EvidenceExtractor
+
+
+@tool
+def search_evidence(
+    claim: str,
+    chunks: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Retrieve candidate evidence passages relevant to a scientific claim."""
+
+    retriever = HybridRetriever()
+
+    return retriever.retrieve(
+        query=claim,
+        chunks=chunks,
+        top_k=10,
+    )
+
+
+@tool
+def rerank_evidence(
+    chunks: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Rerank retrieved scientific evidence candidates."""
+
+    return rerank_chunks(
+        chunks,
+        top_k=5,
+    )
 
 
 class EvidenceRAGAgent(BaseAgent):
-    """Extracts claim-aware evidence units from target and external papers."""
+    """
+    Extracts claim-aware evidence from target
+    and external scientific papers.
+    """
 
-    def __init__(self, config: Dict[str, Any] = None) -> None:
-        super().__init__(name="EvidenceRAGAgent", config=config)
+    def __init__(
+        self,
+        config: Dict[str, Any] = None,
+        retriever: Any = None,
+        extractor: Any = None,
+    ) -> None:
+        """
+        Args:
+            config: Agent configuration (flat dict or a loaded
+                ``config/agents/evidence_rag.yaml`` with an ``agent`` key).
+            retriever: Optional pre-built retriever (defaults to a fresh
+                ``HybridRetriever``). Useful for tests.
+            extractor: Optional pre-built ``EvidenceExtractor`` (or a mock).
+                Lets callers inject a fake extractor instead of requiring a
+                live GOOGLE_API_KEY / GEMINI_API_KEY just to construct the
+                agent.
+        """
 
-    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract evidence bundles relevant to the current claim."""
-        raise NotImplementedError("RAG evidence extraction to be implemented.")
+        super().__init__(
+            name="EvidenceRAGAgent",
+            config=config,
+        )
 
-    def assemble_evidence_bundle(self, document_id: str, claim_id: str) -> List[EvidenceBundle]:
-        """Assemble structured evidence units linking text, tables, and experimental context."""
-        raise NotImplementedError("Evidence bundle assembly to be implemented.")
+        self.retriever = retriever or HybridRetriever()
+
+        self.extractor = extractor or EvidenceExtractor(
+            model_name=self.config.get(
+                "model",
+                "gemma-4-26b-a4b-it",
+            )
+        )
+
+    def execute(
+        self,
+        state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Run the evidence pipeline for the active claim.
+        """
+
+        claim_state = self._get_active_claim(state)
+
+        claim = claim_state["claim"]
+
+        claim_text = claim["statement"]
+
+        papers = self._get_papers(state)
+
+        all_chunks = []
+        for paper in papers:
+            all_chunks.extend(self._create_chunks(paper))
+
+        all_evidence = []
+
+        if all_chunks:
+            params = self.config.get("parameters", {}) if isinstance(self.config, dict) else {}
+            top_k_candidates = int(params.get("top_k_candidates", 15)) if isinstance(params, dict) else 15
+            rerank_top_k = int(params.get("rerank_top_k", 5)) if isinstance(params, dict) else 5
+
+            retrieved = self.retriever.retrieve(
+                query=claim_text,
+                chunks=all_chunks,
+                top_k=top_k_candidates,
+            )
+
+            ranked = rerank_chunks(
+                retrieved,
+                top_k=rerank_top_k,
+            )
+
+            for chunk in ranked:
+                extracted = self.extractor.extract(
+                    claim=claim_text,
+                    chunk=chunk["text"],
+                )
+
+                if not extracted.relevant:
+                    continue
+
+                chunk_paper = chunk.get("paper") or (papers[0] if papers else {})
+                evidence = self._build_bundle(
+                    claim=claim,
+                    paper=chunk_paper,
+                    chunk=chunk,
+                    extracted=extracted,
+                )
+
+                all_evidence.append(evidence)
+
+        evidence_store = state.setdefault(
+            "global_evidence_store",
+            {},
+        )
+
+        for evidence in all_evidence:
+            evidence_store[evidence.id] = evidence.model_dump()
+
+        claim_state["evidence_bundle_ids"] = [
+            evidence.id
+            for evidence in all_evidence
+        ]
+
+        claim_state["status_message"] = (
+            f"Extracted {len(all_evidence)} evidence bundles."
+        )
+
+        # `_get_active_claim` returns a fresh dict (via `model_dump()`) when
+        # `state["claims"][active_claim_id]` is a pydantic
+        # `ClaimInvestigationState`, which is the canonical shape defined in
+        # `mascv.core.state`. Without writing it back explicitly here, every
+        # mutation above (evidence_bundle_ids, status_message) is silently
+        # lost as soon as the input state uses real pydantic models instead
+        # of plain dicts.
+        state["claims"][state["active_claim_id"]] = claim_state
+
+        return state
+
+    def _get_active_claim(
+        self,
+        state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+
+        active_claim_id = state.get(
+            "active_claim_id"
+        )
+
+        if not active_claim_id:
+            raise ValueError(
+                "state.active_claim_id is missing."
+            )
+
+        claims = state.get("claims", {})
+
+        if active_claim_id not in claims:
+            raise ValueError(
+                f"Claim {active_claim_id} not found in state."
+            )
+
+        claim_state = claims[active_claim_id]
+
+        if hasattr(claim_state, "model_dump"):
+            return claim_state.model_dump()
+
+        return claim_state
+
+    def _get_papers(
+        self,
+        state: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+
+        papers = []
+
+        target_paper = state.get("paper")
+
+        if target_paper:
+            if hasattr(target_paper, "model_dump"):
+                p_target = target_paper.model_dump()
+            elif isinstance(target_paper, dict):
+                p_target = dict(target_paper)
+            else:
+                p_target = {"id": "target_paper", "title": "Target Paper"}
+
+            p_target["source_type"] = SourceType.TARGET_PAPER.value
+            p_target["is_independent"] = False
+            papers.append(p_target)
+
+        active_claim_id = state.get("active_claim_id")
+        external_papers = []
+
+        # 1. Check active claim's discovered_papers_metadata strictly for active_claim_id
+        claims = state.get("claims", {})
+        if active_claim_id and active_claim_id in claims:
+            c_state = claims[active_claim_id]
+            claim_papers = (
+                getattr(c_state, "discovered_papers_metadata", [])
+                if not isinstance(c_state, dict)
+                else c_state.get("discovered_papers_metadata", [])
+            )
+            for cp in claim_papers:
+                if cp not in external_papers:
+                    external_papers.append(cp)
+
+        # 2. Check metadata.discovered_papers_metadata strictly for active_claim_id (prevent cross-claim leakage)
+        metadata = state.get("metadata", {}) or {}
+        discovered_meta = metadata.get("discovered_papers_metadata", {})
+        if isinstance(discovered_meta, dict) and active_claim_id in discovered_meta:
+            for cp in discovered_meta[active_claim_id]:
+                if cp not in external_papers:
+                    external_papers.append(cp)
+
+        for paper in external_papers:
+            if hasattr(paper, "model_dump"):
+                p_dict = paper.model_dump()
+            elif isinstance(paper, dict):
+                p_dict = dict(paper)
+            else:
+                continue
+
+            # Ensure paper has an 'id' and readable content
+            if "id" not in p_dict or not p_dict["id"]:
+                p_dict["id"] = p_dict.get("arxiv_id") or p_dict.get("doi") or p_dict.get("title", "ext_paper")
+
+            if not p_dict.get("raw_text") and not p_dict.get("sections"):
+                abstract = p_dict.get("abstract", "")
+                findings = p_dict.get("key_findings", "")
+                title = p_dict.get("title", "")
+                p_dict["raw_text"] = f"Title: {title}\nAbstract: {abstract}\nKey Findings: {findings}".strip()
+
+            p_dict["source_type"] = SourceType.EXTERNAL_SOURCE.value
+            p_dict["is_independent"] = True
+            papers.append(p_dict)
+
+        return papers
+
+    def _create_chunks(
+        self,
+        paper: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        Convert paper content into retrieval chunks.
+        """
+
+        chunks = []
+
+        sections = paper.get(
+            "sections",
+            [],
+        )
+
+        if sections:
+
+            for section in sections:
+
+                section_title = section.get(
+                    "title",
+                    "Unknown",
+                )
+
+                content = section.get(
+                    "content",
+                    "",
+                )
+
+                page_number = section.get(
+                    "page_number",
+                )
+
+                words = content.split()
+
+                chunk_size = 350
+                overlap = 50
+
+                start = 0
+
+                while start < len(words):
+
+                    end = min(
+                        start + chunk_size,
+                        len(words),
+                    )
+
+                    text = " ".join(
+                        words[start:end]
+                    )
+
+                    if text.strip():
+
+                        chunks.append(
+                            {
+                                "text": text,
+                                "section": section_title,
+                                "page_number": page_number,
+                                "paper_id": paper["id"],
+                                "source_type": paper.get("source_type", SourceType.EXTERNAL_SOURCE.value),
+                                "is_independent": paper.get("is_independent", True),
+                                "paper": paper,
+                            }
+                        )
+
+                    if end == len(words):
+                        break
+
+                    start = end - overlap
+
+        else:
+
+            raw_text = paper.get(
+                "raw_text",
+                "",
+            )
+
+            words = raw_text.split()
+
+            for start in range(
+                0,
+                len(words),
+                300,
+            ):
+
+                end = min(
+                    start + 300,
+                    len(words),
+                )
+
+                chunks.append(
+                    {
+                        "text": " ".join(
+                            words[start:end]
+                        ),
+                        "section": "Unknown",
+                        "page_number": None,
+                        "paper_id": paper["id"],
+                        "source_type": paper.get("source_type", SourceType.EXTERNAL_SOURCE.value),
+                        "is_independent": paper.get("is_independent", True),
+                        "paper": paper,
+                    }
+                )
+
+        return chunks
+
+    def _build_bundle(
+        self,
+        claim: Dict[str, Any],
+        paper: Dict[str, Any],
+        chunk: Dict[str, Any],
+        extracted: Any,
+    ) -> EvidenceBundle:
+
+        page = chunk.get(
+            "page_number"
+        )
+
+        if page:
+            location = f"Page {page}"
+        else:
+            location = (
+                f"Section {chunk.get('section', 'Unknown')}"
+            )
+
+        source_type_val = paper.get("source_type") or chunk.get("source_type") or SourceType.EXTERNAL_SOURCE.value
+        is_independent_val = paper.get("is_independent", chunk.get("is_independent", True))
+
+        return EvidenceBundle(
+            id=f"E-{uuid4().hex[:8]}",
+            claim_id=claim["id"],
+            source_paper_id=paper["id"],
+            source_title=(
+                paper.get("title")
+                or (paper.get("metadata", {}).get("title") if isinstance(paper.get("metadata"), dict) else None)
+                or paper.get("id", "Unknown Paper")
+            ),
+            source_type=source_type_val,
+            is_independent=is_independent_val,
+            location=location,
+            content=extracted.evidence_text,
+            context=extracted.context,
+            relationship=EvidenceRelationship(
+                extracted.relationship
+            ),
+            confidence_score=extracted.confidence_score,
+        )
+
+    def assemble_evidence_bundle(
+        self,
+        document_id: str,
+        claim_id: str,
+    ) -> List[EvidenceBundle]:
+        """
+        Compatibility method required by the original agent interface.
+        """
+
+        return []

@@ -1,8 +1,14 @@
-﻿cff-version: 1.2.0
+cff-version: 1.2.0
 message: "If you use this software in your research, please cite it as below."
 authors:
   - family-names: "Zaki"
     given-names: "Beshoy"
+  - family-names: "Kassem"
+    given-names: "Jana"
+  - family-names: "Hany"
+    given-names: "Verina"
+  - family-names: "Elsadek"
+    given-names: "Zeina"
 title: "Multi-Agent Scientific Claim Verification System (MASCV)"
 version: 0.1.0
 date-released: 2026-09-03

@@ -1,4 +1,4 @@
-﻿# Multi-Agent Scientific Claim Verification System (MASCV)
+# Multi-Agent Scientific Claim Verification System (MASCV)
 
 [![CI Pipeline](https://github.com/Beshoy-Zaki/Multi-Agent-Scientific-Claim-Verification-System/actions/workflows/ci.yml/badge.svg)](https://github.com/Beshoy-Zaki/Multi-Agent-Scientific-Claim-Verification-System/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -95,45 +95,35 @@ Multi-Agent-Scientific-Claim-Verification-System/
 ├── assets/
 │   └── diagrams/                     # Architectural and workflow schematics
 ├── config/
-│   ├── agents/                       # Agent prompt templates, model selections, & configs
-│   ├── evaluation/                   # Baseline and ablation matrix configs
-│   ├── default_config.yaml           # Global system hyperparameters and loop thresholds
-│   └── logging.yaml                  # Application logger settings
+│   └── agents/                       # Agent prompt templates, model configurations & hyperparameters
 ├── data/
-│   ├── benchmarks/                   # Standard scientific verification datasets (SciFact, etc.)
 │   ├── raw_papers/                   # Ingested PDF & source documents
-│   ├── processed_cache/              # Cached parsed papers and embeddings
-│   └── sample_inputs/                # Sample papers for pipeline demonstration
+│   ├── processed_cache/              # Cached parsed papers and extraction intermediate state
+│   └── sample_inputs/                # Sample research papers (e.g. LoRA 2106.09685.pdf)
 ├── docs/
-│   ├── architecture/                 # High-level architecture & interaction loop specifications
-│   ├── agents/                       # Detailed specifications for all 7 agents
-│   ├── rag_and_evidence/             # Agentic chunking and evidence bundle documentation
-│   ├── evaluation/                   # Evaluation metrics, baselines, and ablations
-│   └── api/                          # REST API specification
+│   ├── architecture/                 # System architecture & iterative interaction loop specifications
+│   ├── agents/                       # Detailed specifications for all 7 specialized agents
+│   └── rag_and_evidence/             # Document parsing and hybrid retrieval documentation
 ├── scripts/
-│   ├── setup_env.sh / .bat           # Automated environment setup scripts
-│   ├── run_pipeline.py               # Command-line pipeline execution script
-│   ├── run_evaluation.py             # Evaluation benchmark runner
-│   ├── run_ablations.py              # Ablation experiments runner
-│   └── export_report.py              # Scientific report exporter (MD/LaTeX/JSON)
+│   ├── setup_env.sh / .bat           # Environment setup scripts
+│   ├── test_pipeline_live.py         # End-to-end multi-agent pipeline integration test runner
+│   ├── test_paper_search.py          # Grounded literature search validation script
+│   └── test_claim_extraction.py      # Claim extraction verification script
 ├── src/
 │   └── mascv/                        # Core MASCV Python Package
-│       ├── agents/                   # Implementations of the 7 specialized agents
-│       ├── core/                     # Workflow state machine, graph orchestration, exceptions
-│       ├── models/                   # Pydantic schemas (Claims, EvidenceBundles, Debates, Verdicts)
-│       ├── rag/                      # Document parsers, agentic chunking, embeddings, hybrid retrieval
-│       ├── search/                   # Academic (arXiv, Semantic Scholar, Crossref) and Web clients
-│       ├── storage/                  # EvidenceStore, vector database managers, provenance graph
-│       ├── evaluation/               # Metrics, single-agent/standard RAG baselines, ablations
-│       ├── reporting/                # JSON, Markdown, and LaTeX report generators
-│       └── utils/                    # Config loaders, logging, text processing utilities
+│       ├── agents/                   # Implementations of the 7 specialized agents (Gemma 4 powered)
+│       ├── core/                     # InvestigationState, workflow state machine, exceptions
+│       ├── models/                   # Pydantic schemas (Claim, EvidenceBundle, Argument, Verdict)
+│       ├── rag/                      # PDF parser, section extraction, chunking, hybrid retrieval
+│       ├── tools/                    # Grounded evidence search & safe arithmetic validation
+│       └── utils/                    # Google GenAI LLM client, config loader, logging, text processing
 ├── ui/
 │   ├── backend/                      # FastAPI REST application exposing backend routes
 │   └── frontend/                     # Streamlit research dashboard
 ├── tests/
 │   ├── conftest.py                   # Pytest fixtures and mock state data
-│   ├── unit/                         # Unit tests for agents, RAG, models, and storage
-│   └── integration/                  # End-to-end and iterative feedback loop integration tests
+│   ├── unit/                         # Unit tests for all 7 agents, RAG pipeline, and schemas
+│   └── integration/                  # End-to-end pipeline integration tests
 ├── .env.example                      # Template for API keys and environment variables
 ├── .gitignore                        # Standard Python, cache, and artifact exclusions
 ├── CITATION.cff                      # Academic citation metadata
@@ -163,14 +153,13 @@ Multi-Agent-Scientific-Claim-Verification-System/
 
 ---
 
-## 📊 Evaluation & Baselines
+## 🧪 Verification & Quality Assurance
 
-MASCV includes an empirical evaluation framework comparing against:
-1. **Single-Agent Baseline:** Monolithic LLM with literature search and RAG tools.
-2. **Standard RAG Baseline:** Traditional fixed-token sliding window chunking with similarity retrieval.
-3. **Ablation Studies (8 configurations):** Systematic evaluation isolating the effect of adversarial debate, critic validation, claim-aware chunking, and the adaptive supervisor loop.
-
-**Key Metrics:** Claim Verification Accuracy, Evidence Retrieval Quality (Precision/Recall), Citation Faithfulness, Contradiction Detection, Overgeneralization Detection, Inference Cost, and Latency.
+MASCV is built with a test-driven, evidence-grounded verification workflow:
+1. **Automated Unit Testing:** 44+ comprehensive unit tests covering all 7 agents, PDF parsing, hybrid BM25 + dense retrieval, safe AST arithmetic validation, and verdict synthesis.
+2. **Adversarial Dialectic Architecture:** Pits the Support Agent directly against the Attack Agent using live Google Search Grounding to unearth real-world empirical limitations.
+3. **Impartial Critic Adjudication:** Formulates defensible verdicts with confidence scores, identifying potential overgeneralizations and boundary conditions.
+4. **End-to-End Live Integration:** Verified end-to-end across full research publications using Google Gemma 4 (`gemma-4-26b-a4b-it`).
 
 ---
 
@@ -193,24 +182,39 @@ pip install -e ".[dev]"
 ```
 
 ### 2. Configure Environment Variables
-Copy `.env.example` to `.env` and fill in your API keys:
+Copy `.env.example` to `.env` and set your Google Gemini API key:
 ```bash
 cp .env.example .env
 ```
-
-### 3. Launch Dashboard or CLI
+In `.env`:
 ```bash
-# Launch Streamlit Research Dashboard
-streamlit run ui/frontend/streamlit_app.py
-
-# Run pipeline via CLI
-python -m mascv --paper "data/sample_inputs/sample_paper.pdf"
+GOOGLE_API_KEY=your_google_api_key_here
 ```
 
-### 4. Run Tests
+### 3. Run Live Pipeline or Research Dashboard
+```bash
+# Run live end-to-end multi-agent verification pipeline
+python scripts/test_pipeline_live.py
+
+# Launch Streamlit Research Dashboard
+streamlit run ui/frontend/streamlit_app.py
+```
+
+### 4. Run Test Suite
 ```bash
 pytest tests/
 ```
+
+---
+
+## 👥 Contributors & Core Team
+
+MASCV was designed, engineered, and evaluated through the collaborative contributions of:
+
+* **Beshoy Zaki** ([@Beshoy-Zaki](https://github.com/Beshoy-Zaki)) — System Architecture, PDF Parser, Supervisor & Orchestration Workflow, Live Streaming UI & FastAPI Dashboard, Non-Circularity Framework & Model Contracts.
+* **Verina Hany** ([@VerinaHany21](https://github.com/VerinaHany21)) — Supervisor, Claim Analyst, and Paper Search Agent Frameworks, Academic Search Client Integration, Multi-Agent Schema Integration & Configuration.
+* **Zeina Elsadek** ([@zeinaelsadek](https://github.com/zeinaelsadek)) — Initial multi-agent modules, evidence retrieval & verification tooling, testing suites, and core agent implementations.
+* **Jana Kassem** ([@janaosmaneng-cyber](https://github.com/janaosmaneng-cyber)) — Adversarial Attack & Boundary Testing Agent, Critic Agent Adjudication & Evidence Verification Tools, Epistemic Rigor Guidelines.
 
 ---
 
@@ -219,7 +223,7 @@ pytest tests/
 If you reference or build upon this project, please cite:
 ```bibtex
 @misc{zaki2026mascv,
-  author = {Beshoy Zaki},
+  author = {Beshoy Zaki and Jana Kassem and Verina Hany and Zeina Elsadek},
   title = {Multi-Agent Scientific Claim Verification System (MASCV): An Evidence-Grounded Multi-Agent System for Adversarial Analysis of Scientific Claims},
   year = {2026},
   url = {https://github.com/Beshoy-Zaki/Multi-Agent-Scientific-Claim-Verification-System}
@@ -230,3 +234,4 @@ If you reference or build upon this project, please cite:
 
 ## 📄 License
 This project is licensed under the [MIT License](LICENSE).
+

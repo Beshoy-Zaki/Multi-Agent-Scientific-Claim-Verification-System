@@ -1,21 +1,373 @@
-﻿"""Attack Agent: Investigates weaknesses, contradictory findings, and limits of a claim."""
+"""Attack Agent: Investigates weaknesses, contradictory findings, and limits of a claim."""
 
-from typing import Any, Dict, List
+import json
+import logging
+import os
+import re
+from typing import Any, Dict, List, Literal, Optional
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field, field_validator
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 from mascv.agents.base import BaseAgent
 from mascv.models.argument import Argument
+from mascv.models.evidence import is_independent_external_evidence
 from mascv.models.evidence import EvidenceBundle
+from mascv.tools.evidence_tools import search_scientific_evidence, calculate
+from mascv.utils.text_processing import extract_json_from_text
+
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+
+class AttackResult(BaseModel):
+    """Structured result returned by the Attack Agent challenging a claim."""
+
+    attack_points: List[str] = Field(
+        default_factory=list,
+        description="Specific reasons why the scientific claim may be wrong, overstated, or conditional.",
+    )
+
+    evidence_found: List[str] = Field(
+        default_factory=list,
+        description="Evidence from the search that supports the attack.",
+    )
+
+    vulnerabilities: List[str] = Field(
+        default_factory=list,
+        description="Scientific or methodological weaknesses found.",
+    )
+
+    strength: Literal["Strong", "Moderate", "Weak"] = Field(
+        default="Moderate",
+        description="Overall strength of the attack: Strong, Moderate, or Weak.",
+    )
+
+    @field_validator("strength", mode="before")
+    @classmethod
+    def normalize_strength(cls, v: Any) -> str:
+        if isinstance(v, str):
+            s = v.strip().title()
+            if "Strong" in s:
+                return "Strong"
+            if "Weak" in s:
+                return "Weak"
+            if "Mod" in s:
+                return "Moderate"
+        return "Moderate"
 
 
 class AttackAgent(BaseAgent):
-    """Investigates contradictory results, failed replications, and methodological limitations."""
+    """
+    Agent 6: Investigates contradictory results, failed replications,
+    and methodological limitations to formulate an adversarial counter-case.
+    """
 
-    def __init__(self, config: Dict[str, Any] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        llm: Optional[Any] = None,
+        search_tool: Optional[Any] = None,
+    ) -> None:
+        """Initialize AttackAgent with configuration and Gemma 4 model."""
         super().__init__(name="AttackAgent", config=config)
 
-    def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate adversarial counterargument and identify evidentiary vulnerabilities."""
-        raise NotImplementedError("Attack argument generation to be implemented.")
+        if llm is not None:
+            self.llm = llm
+            self.llm_client = None
+        else:
+            model_name = self.config.get("model", "gemma-4-26b-a4b-it") if self.config else "gemma-4-26b-a4b-it"
+            temperature = float(self.config.get("temperature", 0.2)) if self.config else 0.2
+            self.llm = ChatGoogleGenerativeAI(
+                model=model_name,
+                temperature=temperature,
+                max_retries=2,
+                timeout=120.0,
+            )
+            from mascv.utils.llm import LLMClient
+            self.llm_client = LLMClient(
+                model_name=model_name,
+                temperature=temperature,
+                thinking_level="minimal",
+            )
 
-    def construct_counter_case(self, claim_id: str, evidence: List[EvidenceBundle]) -> Argument:
-        """Synthesize opposing evidence and experimental discrepancies."""
-        raise NotImplementedError("Counterargument synthesis to be implemented.")
+        self.structured_llm = self.llm.with_structured_output(AttackResult)
+        self.search_tool = search_tool
+        self.tools = [search_scientific_evidence, calculate]
+
+    def execute(
+        self,
+        state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Execute adversarial investigation on the active claim within InvestigationState.
+        """
+        active_claim_id = (
+            state.get("active_claim_id")
+            if isinstance(state, dict)
+            else getattr(state, "active_claim_id", None)
+        )
+        if not active_claim_id:
+            raise ValueError("state.active_claim_id is missing.")
+
+        claims = state.get("claims", {}) if isinstance(state, dict) else getattr(state, "claims", {})
+        if active_claim_id not in claims:
+            raise ValueError(f"Claim {active_claim_id} not found in state.")
+
+        claim_state = claims[active_claim_id]
+        if isinstance(claim_state, dict):
+            claim = claim_state.get("claim", {})
+            support_arg = claim_state.get("support_argument")
+            evidence_ids = claim_state.get("evidence_bundle_ids", [])
+        else:
+            claim = getattr(claim_state, "claim", None)
+            support_arg = getattr(claim_state, "support_argument", None)
+            evidence_ids = getattr(claim_state, "evidence_bundle_ids", [])
+
+        claim_statement = (
+            claim.get("statement", "") if isinstance(claim, dict) else getattr(claim, "statement", str(claim))
+        )
+
+        support_text = ""
+        if support_arg:
+            if hasattr(support_arg, "conclusion"):
+                support_text = f"Conclusion: {support_arg.conclusion}\nPremises: {', '.join(support_arg.premises)}"
+            elif isinstance(support_arg, dict):
+                support_text = f"Conclusion: {support_arg.get('conclusion', '')}\nPremises: {', '.join(support_arg.get('premises', []))}"
+
+        # Collect relevant evidence passages from global evidence store
+        evidence_store = state.get("global_evidence_store", {}) if isinstance(state, dict) else getattr(state, "global_evidence_store", {})
+        evidence_texts = []
+        has_independent_evidence = False
+        for eid in evidence_ids:
+            item = evidence_store.get(eid)
+            if item:
+                cnt = item.get("content", "") if isinstance(item, dict) else getattr(item, "content", "")
+                rel = item.get("relationship", "") if isinstance(item, dict) else getattr(item, "relationship", "")
+                st_type = item.get("source_type", "") if isinstance(item, dict) else getattr(item, "source_type", "")
+                evidence_texts.append(f"[{eid}] ({st_type} - {rel}): {cnt}")
+                has_independent_evidence = has_independent_evidence or is_independent_external_evidence(
+                    item, active_claim_id
+                )
+
+        # Collect external literature discovered for this claim by PaperSearchAgent
+        claim_papers = (
+            getattr(claim_state, "discovered_papers_metadata", [])
+            if not isinstance(claim_state, dict)
+            else claim_state.get("discovered_papers_metadata", [])
+        )
+        ext_lit = []
+        for p in claim_papers:
+            p_title = getattr(p, "title", p.get("title") if isinstance(p, dict) else "Discovered Publication")
+            p_rel = getattr(p, "relationship", p.get("relationship") if isinstance(p, dict) else "")
+            p_findings = getattr(p, "key_findings", p.get("key_findings") if isinstance(p, dict) else "")
+            p_url = getattr(p, "url", p.get("url") if isinstance(p, dict) else "")
+            ext_lit.append(f"- [{p_rel}] {p_title} ({p_url}): {p_findings}")
+
+        external_evidence = "\n".join(ext_lit) if ext_lit else ""
+
+        # Search for external counter-evidence only if search_tool is injected or explicitly enabled and no lit found
+        params = self.config.get("parameters", {}) if self.config else {}
+        allow_autonomous = params.get("allow_autonomous_search", False) if isinstance(params, dict) else False
+
+        if (self.search_tool or allow_autonomous) and not external_evidence:
+            try:
+                tool_to_use = self.search_tool or search_scientific_evidence
+                search_query = f"{claim_statement} limitations weaknesses disadvantages failure modes"
+                if hasattr(tool_to_use, "invoke"):
+                    tool_out = tool_to_use.invoke(search_query)
+                elif callable(tool_to_use):
+                    tool_out = tool_to_use(search_query)
+                else:
+                    tool_out = ""
+                external_evidence += f"\n{tool_out}"
+            except Exception as exc:
+                logger.warning("Adversarial search invocation failed: %s", exc)
+
+        # Construct adversarial counter-case
+        argument = self.construct_counter_case(
+            claim_id=active_claim_id,
+            claim_text=claim_statement,
+            support_text=support_text,
+            evidence_summary="\n".join(evidence_texts),
+            external_evidence=external_evidence,
+            has_independent_evidence=has_independent_evidence,
+        )
+
+        status_msg = f"Attack argument constructed (Strength: {argument.strength})."
+        if isinstance(claim_state, dict):
+            claim_state["attack_argument"] = argument
+            claim_state["status_message"] = status_msg
+            if isinstance(state, dict):
+                state["claims"][active_claim_id] = claim_state
+        else:
+            claim_state.attack_argument = argument
+            claim_state.status_message = status_msg
+
+        return state
+
+    def construct_counter_case(
+        self,
+        claim_id: str,
+        evidence: Optional[List[Any]] = None,
+        claim_text: str = "",
+        support_text: str = "",
+        evidence_summary: str = "",
+        external_evidence: str = "",
+        has_independent_evidence: bool = False,
+    ) -> Argument:
+        """
+        Challenge the claim and synthesize an adversarial counterargument Argument.
+        """
+        prompt = f"""
+You are Agent 6, the Adversarial Attack Agent in the MASCV scientific claim verification system.
+Your responsibility is to critically challenge the target scientific proposition by probing
+experimental edge cases, unstated hyperparameters, benchmark limitations, scaling failures,
+and potential counter-evidence.
+
+EPISTEMIC GROUNDING MANDATE:
+Every attack point in 'attack_points' MUST begin with its epistemic classification:
+- [DIRECTLY EVIDENCED]: Backed by a specific external counter-study, negative replication, or contradictory benchmark result.
+- [STRONGLY INFERRED]: Deductively derived from the paper's specific methodology, parameters, or equations.
+- [THEORETICAL BOUNDARY]: Legitimate theoretical boundary condition or unstated evaluation assumption.
+Do NOT present arbitrary hypothetical failure modes as demonstrated weaknesses.
+
+TARGET SCIENTIFIC CLAIM:
+{claim_text}
+
+PROPONENT SUPPORT CASE:
+{support_text or "No proponent argument provided."}
+
+AVAILABLE EVIDENCE BUNDLES:
+{evidence_summary or "No evidence bundles indexed."}
+
+EXTERNAL CRITIQUES, BENCHMARKS & DISCOVERED LITERATURE:
+{external_evidence or "No external critiques found."}
+
+Rules:
+1. Prioritize criticisms that specifically engage the target paper's methodology and baseline comparisons.
+2. Formulate 2-3 specific, rigorous attack points, each prefixed with its epistemic category.
+3. Identify vulnerabilities (e.g. unstated boundary constraints, methodological confounds, evaluation trade-offs).
+4. Distinguish between evidence that directly contradicts vs. evidence that narrows the claim's scope.
+5. Extract exact URLs from the external evidence into 'evidence_found' to ground the attack.
+6. Provide a realistic attack strength (Strong, Moderate, or Weak).
+"""
+
+        json_prompt = (
+            prompt
+            + "\n\nFormat your response as a valid JSON object matching this schema exactly:\n"
+            "{\n"
+            '  "attack_points": ["[DIRECTLY EVIDENCED] point 1", "[STRONGLY INFERRED] point 2"],\n'
+            '  "evidence_found": ["URL or finding 1", "URL or finding 2"],\n'
+            '  "vulnerabilities": ["vulnerability 1"],\n'
+            '  "strength": "Strong" | "Moderate" | "Weak"\n'
+            "}\n"
+        )
+
+        attack_result = None
+        if self.llm_client is not None:
+            try:
+                raw_text = self.llm_client.generate(prompt=json_prompt)
+                json_str = extract_json_from_text(raw_text)
+                data = json.loads(json_str) if json_str else {}
+                attack_result = AttackResult(**data)
+            except Exception as exc:
+                logger.info("AttackAgent LLMClient generation failed: %s. Trying structured output.", exc)
+
+        if attack_result is None:
+            try:
+                attack_result = self.structured_llm.invoke(prompt)
+            except Exception as raw_exc:
+                logger.warning("AttackAgent structured generation failed: %s. Using heuristic fallback.", raw_exc)
+                attack_result = AttackResult(
+                    attack_points=[
+                        "[STRONGLY INFERRED] Generalizability is bounded by specific baseline configurations, evaluation datasets, and parameter distributions.",
+                        "[THEORETICAL BOUNDARY] Potential sensitivity to unstated hyperparameters or boundary conditions under stress-testing.",
+                    ],
+                    evidence_found=[],
+                    vulnerabilities=["Boundary condition constraints and limited cross-domain stress-testing."],
+                    strength="Moderate",
+                )
+
+        # Build canonical Argument model for dialectic synthesis
+        premises = attack_result.attack_points or ["[STRONGLY INFERRED] Methodological limitations exist under constrained evaluation settings."]
+        vulnerabilities = attack_result.vulnerabilities or ["Boundary condition constraints."]
+        conclusion = (
+            f"The claim is vulnerable to boundary limitations: {'; '.join(vulnerabilities[:2])}"
+        )
+
+        # Extract cited URLs from external evidence and attack result
+        cited_urls: List[str] = []
+        if attack_result.evidence_found:
+            for item in attack_result.evidence_found:
+                urls = re.findall(r"https?://[^\s)\]]+", item)
+                for u in urls:
+                    if u not in cited_urls:
+                        cited_urls.append(u)
+        if external_evidence:
+            urls = re.findall(r"https?://[^\s)\]]+", external_evidence)
+            for u in urls:
+                if u not in cited_urls:
+                    cited_urls.append(u)
+
+        return Argument(
+            agent_name="AttackAgent",
+            claim_id=claim_id,
+            stance="AGAINST",
+            premises=premises,
+            cited_evidence_ids=cited_urls[:5],
+            conclusion=conclusion,
+            strength=attack_result.strength,
+            identified_limitations=vulnerabilities,
+            has_independent_evidence=has_independent_evidence,
+            evidence_types_used=["ADVERSARIAL_CRITIQUE"],
+        )
+
+
+def run_attack_agent(paper_text: str, support: Any) -> Optional[AttackResult]:
+    """
+    Standalone runner for backward compatibility with standalone research scripts.
+    """
+    print("\n" + "=" * 60)
+    print("AGENT 6 — ATTACK AGENT")
+    print("=" * 60)
+
+    agent = AttackAgent()
+    claim_text = getattr(support, "claim", str(support))
+    evidence_text = str(getattr(support, "supporting_evidence", ""))
+
+    prompt = f"""
+Original research paper text excerpt:
+{paper_text[:3000]}
+
+Main scientific claim:
+{claim_text}
+
+Supporting evidence identified from the paper:
+{evidence_text}
+
+Challenge this claim according to your adversarial instructions and return AttackResult.
+"""
+
+    try:
+        attack = agent.structured_llm.invoke(prompt)
+    except Exception as e:
+        print(f"\nAgent 6 failed: {e}")
+        return None
+
+    print("\nATTACK POINTS:")
+    for point in attack.attack_points:
+        print(f"- {point}")
+
+    print("\nEVIDENCE FOUND:")
+    for ev in attack.evidence_found:
+        print(f"- {ev}")
+
+    print("\nVULNERABILITIES:")
+    for vuln in attack.vulnerabilities:
+        print(f"- {vuln}")
+
+    print(f"\nATTACK STRENGTH: {attack.strength}")
+
+    return attack
