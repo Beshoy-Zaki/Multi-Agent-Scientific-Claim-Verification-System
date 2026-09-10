@@ -21,6 +21,7 @@ prompts:
     - Supported: {supported_count}
     - Partially Supported: {partially_supported_count}
     - Unsupported / Refuted: {unsupported_count}
+    - Inconclusive / Unverified: {inconclusive_count}
     Detailed Claim Findings & Critic Verdicts:
     {verdicts_breakdown}
     Please produce a structured Executive Summary containing:

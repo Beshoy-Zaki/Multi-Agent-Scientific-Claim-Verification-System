@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -10,6 +11,7 @@ from typing import Dict, Any, Optional
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src")))
 
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -132,7 +134,7 @@ CUSTOM_CSS = """
     color: #9F1239 !important;
 }
 
-/* Claim Cards (Explicit Contrast) */
+/* Claim Cards */
 .claim-card {
     background-color: #FFFFFF !important;
     border: 1px solid #CBD5E1 !important;
@@ -162,7 +164,7 @@ CUSTOM_CSS = """
     color: #334155 !important;
 }
 
-/* Literature Search Card (Explicit Contrast) */
+/* Literature Search Card */
 .search-card {
     background: #FFFFFF !important;
     border: 1px solid #CBD5E1 !important;
@@ -181,11 +183,7 @@ CUSTOM_CSS = """
     color: #0F172A !important;
 }
 
-/* ------------------------------------------------------------------------- */
-/* High-Contrast Markdown & Table Typography (Fixes White-on-White Anywhere) */
-/* ------------------------------------------------------------------------- */
-
-/* Global Markdown Tables (Executive Summary & Report Tables) */
+/* Markdown Tables */
 div[data-testid="stMarkdownContainer"] table,
 table {
     width: 100% !important;
@@ -221,92 +219,107 @@ tr:nth-child(even) td {
     background-color: #F8FAFC !important;
     color: #0F172A !important;
 }
-
-div[data-testid="stMarkdownContainer"] td strong,
-div[data-testid="stMarkdownContainer"] td b,
-div[data-testid="stMarkdownContainer"] th strong,
-div[data-testid="stMarkdownContainer"] th b {
-    color: #0F172A !important;
-    font-weight: 700 !important;
-}
-
-/* Inline Code Elements inside Markdown & Tables */
-div[data-testid="stMarkdownContainer"] code,
-code {
-    background-color: #F1F5F9 !important;
-    color: #0F172A !important;
-    font-weight: 600 !important;
-    padding: 2px 6px !important;
-    border-radius: 4px !important;
-    border: 1px solid #CBD5E1 !important;
-}
-
-/* Blockquotes (High Contrast) */
-div[data-testid="stMarkdownContainer"] blockquote,
-blockquote {
-    background-color: #F8FAFC !important;
-    border-left: 4px solid #6366F1 !important;
-    color: #1E293B !important;
-    padding: 12px 18px !important;
-    border-radius: 0 8px 8px 0 !important;
-    margin: 14px 0 !important;
-}
-div[data-testid="stMarkdownContainer"] blockquote p,
-blockquote p {
-    color: #1E293B !important;
-    font-weight: 500 !important;
-}
-
-/* Expander Containers & Content (Guarantees Dark Text in Expanders) */
-div[data-testid="stExpander"] {
-    background-color: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    border-radius: 10px !important;
-    margin-bottom: 12px !important;
-}
-div[data-testid="stExpander"] div[role="button"] {
-    color: #0F172A !important;
-    font-weight: 600 !important;
-}
-div[data-testid="stExpander"] div[role="button"] p,
-div[data-testid="stExpander"] div[role="button"] span {
-    color: #0F172A !important;
-}
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] p,
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] li,
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] span,
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] div {
-    color: #1E293B !important;
-}
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h1,
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h2,
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h3,
-div[data-testid="stExpander"] div[data-testid="stMarkdownContainer"] h4 {
-    color: #312E81 !important;
-}
-
-/* Bordered Containers (e.g. Tab 5 Full Executive Summary) */
-div[data-testid="stVerticalBlockBorderWrapper"] {
-    background-color: #FFFFFF !important;
-    border: 1px solid #CBD5E1 !important;
-    border-radius: 10px !important;
-    padding: 18px 24px !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"] p,
-div[data-testid="stVerticalBlockBorderWrapper"] li,
-div[data-testid="stVerticalBlockBorderWrapper"] span,
-div[data-testid="stVerticalBlockBorderWrapper"] div {
-    color: #1E293B !important;
-}
-div[data-testid="stVerticalBlockBorderWrapper"] h1,
-div[data-testid="stVerticalBlockBorderWrapper"] h2,
-div[data-testid="stVerticalBlockBorderWrapper"] h3,
-div[data-testid="stVerticalBlockBorderWrapper"] h4 {
-    color: #312E81 !important;
-}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# Auto-Scroll Functionality
+# -----------------------------------------------------------------------------
+def auto_scroll_to_bottom():
+    """Injects JavaScript to smoothly scroll the active Streamlit viewport to the bottom."""
+    ts = str(time.time())
+    js_code = """
+        <div id="scroll-anchor-__TS__"></div>
+        <script>
+        (function() {
+            function findScrollContainer() {
+                try {
+                    const doc = window.parent.document;
+                    if (!doc) return null;
+
+                    // 1. In Streamlit 1.25+, stAppViewContainer is the primary scrolling container
+                    const appView = doc.querySelector('[data-testid="stAppViewContainer"]');
+                    if (appView && appView.scrollHeight > appView.clientHeight) {
+                        return appView;
+                    }
+
+                    // 2. Candidate fallbacks
+                    const candidates = [
+                        appView,
+                        doc.querySelector('section[data-testid="stMain"]'),
+                        doc.querySelector('section.main'),
+                        doc.querySelector('.main'),
+                        doc.documentElement,
+                        doc.body
+                    ];
+
+                    for (const el of candidates) {
+                        if (el) {
+                            const overflow = window.parent.getComputedStyle(el).overflowY;
+                            if ((overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') && el.scrollHeight > el.clientHeight) {
+                                return el;
+                            }
+                        }
+                    }
+                    return appView || doc.documentElement || doc.body;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function performScroll() {
+                try {
+                    // Priority 1: scrollIntoView on the iframe itself (cross-browser container-agnostic)
+                    if (window.frameElement) {
+                        window.frameElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                    }
+                } catch (e) {}
+
+                try {
+                    // Priority 2: Direct container scroll
+                    const container = findScrollContainer();
+                    if (container) {
+                        container.scrollTo({
+                            top: container.scrollHeight + 10000,
+                            behavior: 'smooth'
+                        });
+                    }
+
+                    // Priority 3: Window-level scroll
+                    if (window.parent && window.parent.scrollTo) {
+                        window.parent.scrollTo({ top: 999999, behavior: 'smooth' });
+                    }
+                } catch (e) {}
+            }
+
+            // Run immediately and staged across React render cycles
+            performScroll();
+            setTimeout(performScroll, 50);
+            setTimeout(performScroll, 200);
+            setTimeout(performScroll, 500);
+
+            // Attach persistent MutationObserver to stAppViewContainer
+            try {
+                const parentWin = window.parent;
+                if (parentWin && !parentWin._mascv_scroll_attached) {
+                    parentWin._mascv_scroll_attached = true;
+                    const doc = parentWin.document;
+                    const scrollTarget = doc.querySelector('[data-testid="stAppViewContainer"]') || doc.querySelector('section.main') || doc.body;
+                    if (scrollTarget) {
+                        let debounceTimer = null;
+                        const observer = new MutationObserver(() => {
+                            if (debounceTimer) clearTimeout(debounceTimer);
+                            debounceTimer = setTimeout(performScroll, 80);
+                        });
+                        observer.observe(scrollTarget, { childList: true, subtree: true });
+                    }
+                }
+            } catch (e) {}
+        })();
+        </script>
+    """.replace("__TS__", ts)
+    components.html(js_code, height=0, width=0)
 
 # -----------------------------------------------------------------------------
 # Session State Initialization
@@ -328,7 +341,6 @@ def add_log(agent: str, message: str):
 
 
 def get_field(obj: Any, field_name: str, default: Any = None) -> Any:
-    """Safely extract field from Pydantic model, dataclass, or dictionary."""
     if obj is None:
         return default
     if isinstance(obj, dict):
@@ -337,7 +349,6 @@ def get_field(obj: Any, field_name: str, default: Any = None) -> Any:
 
 
 def format_evidence_item(b: Any) -> Dict[str, Any]:
-    """Normalize evidence bundle whether it is a dict or EvidenceBundle Pydantic model."""
     if b is None:
         return {}
     b_id = get_field(b, "id", "E-?")
@@ -362,7 +373,6 @@ def format_evidence_item(b: Any) -> Dict[str, Any]:
 
 
 def format_claim_item(claim_obj: Any) -> Dict[str, Any]:
-    """Normalize claim whether it is a dict or Claim Pydantic model."""
     if claim_obj is None:
         return {}
     c_id = get_field(claim_obj, "id", "")
@@ -383,7 +393,6 @@ def format_claim_item(claim_obj: Any) -> Dict[str, Any]:
 
 
 def format_argument_item(arg_obj: Any) -> Optional[Dict[str, Any]]:
-    """Normalize argument whether it is a dict or Argument Pydantic model."""
     if arg_obj is None:
         return None
     raw_premises = get_field(arg_obj, "premises", []) or []
@@ -400,7 +409,6 @@ def format_argument_item(arg_obj: Any) -> Optional[Dict[str, Any]]:
 
 
 def format_verdict_item(verdict_obj: Any) -> Optional[Dict[str, Any]]:
-    """Normalize verdict whether it is a dict or Verdict Pydantic model."""
     if verdict_obj is None:
         return None
     raw_v = get_field(verdict_obj, "verdict", "Inconclusive")
@@ -441,7 +449,6 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ Investigation Setup")
     
-    # Check Google API Key Status
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if api_key:
         st.success("🟢 Google Gemma 4 API Connected")
@@ -479,7 +486,6 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🚀 Investigation Pipeline")
 
-    # One-Click Run Button
     run_disabled = pdf_to_load is None or not os.path.exists(pdf_to_load)
     if st.button("▶️ Run Full Multi-Agent Pipeline", type="primary", use_container_width=True, disabled=run_disabled):
         st.session_state.pipeline_running = True
@@ -492,7 +498,6 @@ with st.sidebar:
         st.session_state.execution_logs = []
         st.rerun()
 
-    # Progress Indicator
     st.markdown("---")
     st.subheader("📊 Pipeline Stage")
     steps = [
@@ -512,18 +517,17 @@ with st.sidebar:
 
 
 # -----------------------------------------------------------------------------
-# Multi-Agent Execution Handler (with Real-Time Live Streaming)
+# Multi-Agent Execution Handler (with Continuous Auto-Scroll)
 # -----------------------------------------------------------------------------
 if st.session_state.get("pipeline_running", False):
+    auto_scroll_to_bottom()
     pdf_path = st.session_state.get("target_pdf")
     
     with st.status("🤖 Executing MASCV Multi-Agent Pipeline in Real Time...", expanded=True) as status_box:
         try:
             live_progress = st.progress(0.0)
 
-            # ---------------------------------------------------------
             # 1. Paper Ingestion
-            # ---------------------------------------------------------
             st.markdown("### 📄 Step 1/8: Ingesting & Structuring Paper (`PDFParser`)")
             with st.spinner("Extracting text and structural sections from PDF..."):
                 parser = PDFParser()
@@ -544,17 +548,10 @@ if st.session_state.get("pipeline_running", False):
                 words_count = len(paper.raw_text.split()) if paper.raw_text else 0
                 st.metric("Word Count", f"{words_count:,}")
 
-            with st.expander(f"📑 Preview Parsed Sections ({len(paper.sections)} detected)", expanded=False):
-                for sec in paper.sections[:6]:
-                    st_title = getattr(sec, "title", "Section") or "Section"
-                    st_text = getattr(sec, "content", "") or ""
-                    st.markdown(f"• **{st_title}** ({len(st_text.split())} words)")
-
             st.markdown("---")
+            auto_scroll_to_bottom()
 
-            # ---------------------------------------------------------
             # 2. Extract Claims
-            # ---------------------------------------------------------
             st.markdown("### 📋 Step 2/8: Formalizing Testable Claims (`ClaimAnalystAgent` via Gemma 4)")
             with st.spinner("Deconstructing publication into formalized scientific propositions..."):
                 analyst = ClaimAnalystAgent()
@@ -569,45 +566,31 @@ if st.session_state.get("pipeline_running", False):
             for cid, cstate in claims_dict.items():
                 raw_c = get_field(cstate, "claim")
                 claim = format_claim_item(raw_c)
-                ctype = claim["claim_type"]
-                subject = claim["subject"]
-                statement = claim["statement"]
-                benchmarks = claim["benchmarks"]
-                metrics = claim["metrics"]
                 st.markdown(f"""
                 <div class="claim-card" style="border-left: 5px solid #6366F1; margin-bottom: 8px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 700; color: #4338CA;">[{cid}] {subject or 'Scientific Proposition'}</span>
-                        <span class="tag-pill" style="background-color: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
+                        <span style="font-weight: 700; color: #4338CA;">[{cid}] {claim['subject'] or 'Scientific Proposition'}</span>
+                        <span class="tag-pill" style="background-color: #E0E7FF; color: #3730A3;">{claim['claim_type'].upper()}</span>
                     </div>
-                    <p style="margin: 6px 0 4px 0; color: #1E293B;"><b>Statement:</b> {statement}</p>
+                    <p style="margin: 6px 0 4px 0; color: #1E293B;"><b>Statement:</b> {claim['statement']}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                if benchmarks or metrics:
-                    tags = " ".join([f"`📊 {b}`" for b in benchmarks] + [f"`📈 {m}`" for m in metrics])
-                    st.caption(f"Grounding Targets: {tags}")
 
-            # Get list of all formalized claims to evaluate
-            claims_dict = get_field(state, "claims", {})
             all_claim_ids = list(claims_dict.keys())
             total_claims = len(all_claim_ids)
 
             st.markdown("---")
             st.markdown(f"### 🔄 Investigating All Extracted Claims ({total_claims} Total)")
-            st.caption("Each claim undergoes independent Literature Grounded Search, Evidence Extraction, Support Case, Adversarial Attack, and Critic Peer Adjudication.")
+            auto_scroll_to_bottom()
 
-            # Instantiate verification agents
             searcher = PaperSearchAgent()
             rag = EvidenceRAGAgent()
             support = SupportAgent()
             attack = AttackAgent()
             critic = CriticAgent()
 
-            # Iterate through each claim sequentially
             for claim_idx, active_id in enumerate(all_claim_ids, 1):
                 st.markdown(f"## 🔬 Claim {claim_idx}/{total_claims}: `[{active_id}]`")
-
-                # Set active claim in state
                 st.session_state.active_claim_id = active_id
                 if isinstance(state, dict):
                     state["active_claim_id"] = active_id
@@ -619,9 +602,7 @@ if st.session_state.get("pipeline_running", False):
                 active_claim = format_claim_item(get_field(active_cstate, "claim"))
                 st.info(f"Target Proposition: **{active_claim['statement']}**")
 
-                # ---------------------------------------------------------
-                # 3. Paper Search Agent
-                # ---------------------------------------------------------
+                # 3. Paper Search
                 st.markdown(f"#### 🌐 Phase 3: Literature Discovery (`PaperSearchAgent`)")
                 with st.spinner(f"Executing Google Grounded Search for claim [{active_id}]..."):
                     state = searcher.execute(state)
@@ -632,67 +613,22 @@ if st.session_state.get("pipeline_running", False):
                     total_discovered = len(discovered_meta) if discovered_meta else len(discovered_titles)
                     add_log("PaperSearchAgent", f"Retrieved {total_discovered} external citations for [{active_id}].")
 
-                st.success(f"🌐 Discovered **{total_discovered} relevant literature sources** for [{active_id}]:")
+                st.success(f"🌐 Discovered **{total_discovered} relevant literature sources** for [{active_id}]")
+                auto_scroll_to_bottom()
 
-                if discovered_meta:
-                    for p in discovered_meta:
-                        p_title = get_field(p, "title", "Discovered Paper")
-                        p_url = get_field(p, "url") or f"https://scholar.google.com/scholar?q={p_title.replace(' ', '+')}"
-                        p_score_raw = get_field(p, "relevance_score", 0.85)
-                        p_score = int((p_score_raw or 0.85) * 100)
-                        p_rel = get_field(p, "relationship", "RELEVANT")
-                        p_authors = get_field(p, "authors", [])
-                        p_year = get_field(p, "year", "N/A")
-                        p_venue = get_field(p, "venue", "Repository")
-                        p_findings = get_field(p, "relevance_rationale") or get_field(p, "key_findings")
-                        st.markdown(f"""
-                        <div class="search-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <a href="{p_url}" target="_blank" style="font-weight: 700; color: #0284C7; text-decoration: none;">📄 {p_title}</a>
-                                <span class="tag-pill" style="background: #E0F2FE; color: #0369A1;">{p_rel} • {p_score}% RELEVANCE</span>
-                            </div>
-                            <div style="font-size: 0.85rem; color: #64748B; margin-top: 4px;">
-                                Authors: {', '.join(p_authors[:3]) if p_authors else 'Academic Authors'} ({p_year}) • Venue: {p_venue}
-                            </div>
-                            {f'<div style="font-size: 0.85rem; color: #334155; margin-top: 4px; font-style: italic;"><b>Findings:</b> {p_findings}</div>' if p_findings else ''}
-                        </div>
-                        """, unsafe_allow_html=True)
-                elif discovered_titles:
-                    for t in discovered_titles:
-                        st.markdown(f"- 📄 **{t}**")
-
-                # ---------------------------------------------------------
-                # 4. Evidence RAG Agent
-                # ---------------------------------------------------------
+                # 4. Evidence RAG
                 st.markdown(f"#### 📚 Phase 4: Grounded Evidence Extraction & Bundling (`EvidenceRAGAgent`)")
                 with st.spinner(f"Extracting & verifying evidence passages for claim [{active_id}]..."):
                     state = rag.execute(state)
-                    ev_store = get_field(state, "global_evidence_store", {})
                     claims_dict = get_field(state, "claims", {})
                     active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
                     bundle_ids = get_field(active_cstate, "evidence_bundle_ids", [])
                     add_log("EvidenceRAGAgent", f"Bundled {len(bundle_ids)} evidence passages for [{active_id}].")
 
-                st.success(f"📚 Extracted & bundled **{len(bundle_ids)} evidence units** for [{active_id}]:")
+                st.success(f"📚 Extracted & bundled **{len(bundle_ids)} evidence units** for [{active_id}]")
+                auto_scroll_to_bottom()
 
-                with st.expander(f"🔍 Inspect Grounded Evidence Bundles for [{active_id}] ({len(bundle_ids)} total)", expanded=False):
-                    for bid in bundle_ids[:4]:
-                        raw_b = ev_store.get(bid) if isinstance(ev_store, dict) else None
-                        if raw_b:
-                            b = format_evidence_item(raw_b)
-                            b_rel = b["relationship"]
-                            b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
-                            st.markdown(f"""
-                            <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 10px;">
-                                <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
-                                <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b['source_title']}</b> ({b['location'] or 'Document'})</span>
-                                <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #1E293B;">"{b['content'][:240]}..."</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                # ---------------------------------------------------------
                 # 5. Support Agent
-                # ---------------------------------------------------------
                 st.markdown(f"#### 🛡️ Phase 5: Affirmative Case Construction (`SupportAgent`)")
                 with st.spinner(f"Synthesizing affirmative argument with premises for [{active_id}]..."):
                     state = support.execute(state)
@@ -703,28 +639,16 @@ if st.session_state.get("pipeline_running", False):
                     add_log("SupportAgent", f"Constructed affirmative argument for [{active_id}].")
 
                 if sup_arg:
-                    st_strength = str(sup_arg.get("strength") or "MODERATE").upper()
                     st.markdown(f"""
                     <div class="debate-box support-box">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span class="agent-pill agent-support">🛡️ SUPPORT AGENT</span>
-                            <span style="font-weight: 700; color: #047857;">STANCE: {sup_arg.get('stance', 'FOR')} • STRENGTH: {st_strength}</span>
-                        </div>
-                        <p style="font-weight: 600; color: #065F46; margin-bottom: 6px;">Conclusion: {sup_arg.get('conclusion', '')}</p>
+                        <span class="agent-pill agent-support">🛡️ SUPPORT AGENT</span>
+                        <span style="font-weight: 700; color: #047857;">STANCE: {sup_arg.get('stance', 'FOR')}</span>
+                        <p style="font-weight: 600; color: #065F46; margin-top: 6px;">Conclusion: {sup_arg.get('conclusion', '')}</p>
                     </div>
                     """, unsafe_allow_html=True)
-                    sup_premises = sup_arg.get("premises", [])
-                    sup_citations = sup_arg.get("cited_evidence_ids", [])
-                    if sup_premises:
-                        with st.expander(f"View Support Affirmative Premises [{active_id}]", expanded=False):
-                            for p in sup_premises:
-                                st.write(f"• {p}")
-                            if sup_citations:
-                                st.caption(f"Cited Evidence IDs: {', '.join(sup_citations)}")
+                auto_scroll_to_bottom()
 
-                # ---------------------------------------------------------
                 # 6. Attack Agent
-                # ---------------------------------------------------------
                 st.markdown(f"#### ⚔️ Phase 6: Adversarial Attack & Boundary Testing (`AttackAgent`)")
                 with st.spinner(f"Searching counter-evidence and probing vulnerabilities for [{active_id}]..."):
                     state = attack.execute(state)
@@ -735,37 +659,18 @@ if st.session_state.get("pipeline_running", False):
                     add_log("AttackAgent", f"Constructed adversarial counter-case for [{active_id}].")
 
                 if atk_arg:
-                    atk_strength = str(atk_arg.get("strength") or "MODERATE").upper()
                     st.markdown(f"""
                     <div class="debate-box attack-box">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span class="agent-pill agent-attack">⚔️ ATTACK AGENT</span>
-                            <span style="font-weight: 700; color: #BE123C;">STANCE: {atk_arg.get('stance', 'AGAINST')} • STRENGTH: {atk_strength}</span>
-                        </div>
-                        <p style="font-weight: 600; color: #9F1239; margin-bottom: 6px;">Counter-Conclusion: {atk_arg.get('conclusion', '')}</p>
+                        <span class="agent-pill agent-attack">⚔️ ATTACK AGENT</span>
+                        <span style="font-weight: 700; color: #BE123C;">STANCE: {atk_arg.get('stance', 'AGAINST')}</span>
+                        <p style="font-weight: 600; color: #9F1239; margin-top: 6px;">Counter-Conclusion: {atk_arg.get('conclusion', '')}</p>
                     </div>
                     """, unsafe_allow_html=True)
-                    atk_premises = atk_arg.get("premises", [])
-                    atk_limitations = atk_arg.get("identified_limitations", [])
-                    atk_citations = atk_arg.get("cited_evidence_ids", [])
-                    if atk_premises or atk_limitations:
-                        with st.expander(f"View Attack Counter-Premises & Vulnerabilities [{active_id}]", expanded=False):
-                            for p in atk_premises:
-                                st.write(f"• {p}")
-                            if atk_limitations:
-                                st.write("**Identified Limitations:**")
-                                for lim in atk_limitations:
-                                    st.caption(f"⚠️ {lim}")
-                            if atk_citations:
-                                st.write("**External Counter-Evidence Links:**")
-                                for link in atk_citations:
-                                    st.markdown(f"- [{link}]({link})")
+                auto_scroll_to_bottom()
 
-                # ---------------------------------------------------------
                 # 7. Critic Agent
-                # ---------------------------------------------------------
                 st.markdown(f"#### ⚖️ Phase 7: Adjudicating Debate & Verdict for [{active_id}] (`CriticAgent`)")
-                with st.spinner(f"Impartially evaluating debate, verifying citations & formulating verdict for [{active_id}]..."):
+                with st.spinner(f"Impartially evaluating debate & formulating verdict for [{active_id}]..."):
                     state = critic.execute(state)
                     claims_dict = get_field(state, "claims", {})
                     active_cstate = claims_dict.get(active_id, {}) if isinstance(claims_dict, dict) else getattr(claims_dict, active_id, {})
@@ -776,40 +681,20 @@ if st.session_state.get("pipeline_running", False):
                 if verdict_dict:
                     v_type = verdict_dict.get("verdict", "Inconclusive")
                     conf = int((verdict_dict.get("confidence", 0.0) or 0.0) * 100)
-                    synthesis = verdict_dict.get("synthesis_summary", "")
-                    finding = verdict_dict.get("critic_finding")
-
                     st.markdown(f"""
                     <div style="background: #F8FAFC; border: 2px solid #6366F1; border-radius: 12px; padding: 14px 18px; margin-bottom: 10px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <h3 style="margin: 0; color: #4338CA;">⚖️ Final Verdict [{active_id}]: {v_type}</h3>
-                            <span style="font-size: 1.2rem; font-weight: 800; color: #4338CA;">{conf}% Confidence</span>
-                        </div>
-                        <p style="margin: 8px 0 0 0; color: #334155; font-size: 0.95rem;"><b>Scientific Synthesis:</b> {synthesis}</p>
+                        <h3 style="margin: 0; color: #4338CA;">⚖️ Final Verdict [{active_id}]: {v_type} ({conf}% Confidence)</h3>
+                        <p style="margin: 6px 0 0 0; color: #334155;">{verdict_dict.get('synthesis_summary', '')}</p>
                     </div>
                     """, unsafe_allow_html=True)
 
-                    if finding:
-                        c1, c2, c3, c4 = st.columns(4)
-                        with c1:
-                            st.metric("Citation Grounding", "Verified ✅" if finding.get("citation_valid") else "Unverified ❌")
-                        with c2:
-                            st.metric("Reasoning Soundness", "Sound ✅" if finding.get("reasoning_sound") else "Flawed ❌")
-                        with c3:
-                            st.metric("Overgeneralization", "Clean ✅" if not finding.get("overgeneralization_detected") else "Detected ⚠️")
-                        with c4:
-                            st.metric("Comparative Parity", "Fair ✅" if finding.get("fair_comparison") else "Asymmetric ❌")
-
-                # Step progress within multi-claim execution
                 cur_prog = 0.25 + 0.65 * (claim_idx / total_claims)
                 live_progress.progress(min(0.92, cur_prog))
                 st.markdown("---")
+                auto_scroll_to_bottom()
 
-            # ---------------------------------------------------------
-            # 8. Supervisor Executive Summary (AT THE VERY END AFTER ALL CLAIMS ARE REVIEWED)
-            # ---------------------------------------------------------
+            # 8. Executive Summary
             st.markdown(f"### 🧭 Step 8/8: Overarching Scientific Executive Summary (`SupervisorAgent`)")
-            st.info(f"Synthesizing meta-analysis across all **{total_claims} verified propositions**...")
             with st.spinner("Synthesizing multi-agent executive assessment report across all claims..."):
                 supervisor = SupervisorAgent()
                 summary = supervisor.generate_executive_summary(state)
@@ -818,25 +703,18 @@ if st.session_state.get("pipeline_running", False):
                 add_log("SupervisorAgent", f"Executive summary synthesized across all {total_claims} claims.")
 
             live_progress.progress(1.0)
-            st.success(f"🧭 **SupervisorAgent** synthesized final assessment report across all {total_claims} claims.")
-            with st.expander("📄 Preview Synthesized Executive Summary", expanded=True):
-                with st.container(border=True):
-                    st.markdown(summary)
+            st.success("🧭 SupervisorAgent finalized report.")
+            with st.expander("📄 Synthesized Executive Summary", expanded=True):
+                st.markdown(summary)
 
-            # Set active claim back to first claim for clean tab exploration
             if all_claim_ids:
                 st.session_state.active_claim_id = all_claim_ids[0]
-                if isinstance(state, dict):
-                    state["active_claim_id"] = all_claim_ids[0]
-                elif hasattr(state, "active_claim_id"):
-                    state.active_claim_id = all_claim_ids[0]
 
-            # Completion & state persistence
             st.session_state.state = state
             st.session_state.pipeline_running = False
-            st.session_state.pipeline_completed = True
-            status_box.update(label="🎉 Multi-Agent Pipeline Execution Succeeded (All Claims Reviewed)!", state="complete", expanded=True)
+            status_box.update(label="🎉 Multi-Agent Pipeline Completed!", state="complete", expanded=True)
             st.balloons()
+            auto_scroll_to_bottom()
 
         except Exception as exc:
             status_box.update(label=f"❌ Pipeline Failed: {exc}", state="error", expanded=True)
@@ -845,7 +723,7 @@ if st.session_state.get("pipeline_running", False):
 
 
 # -----------------------------------------------------------------------------
-# Main Dashboard Multi-View Tabs (with Live Activity Stream)
+# Main Dashboard Multi-View Tabs
 # -----------------------------------------------------------------------------
 tab_stream, tab_paper, tab_claims, tab_evidence, tab_debate, tab_verdict = st.tabs([
     "⚡ Live Activity Stream",
@@ -858,20 +736,15 @@ tab_stream, tab_paper, tab_claims, tab_evidence, tab_debate, tab_verdict = st.ta
 
 state = st.session_state.state
 
-# -----------------------------------------------------------------------------
 # TAB 0: Live Activity Stream
-# -----------------------------------------------------------------------------
 with tab_stream:
     st.header("⚡ Real-Time Multi-Agent Activity Stream")
     claims_dict = get_field(state, "claims", {})
     if state and claims_dict:
-        st.write("Complete chronological trace of all 8 multi-agent verification phases:")
-
-        # Interactive Claim Switcher for Multi-Claim Trace
         claim_keys = list(claims_dict.keys())
         default_index = claim_keys.index(st.session_state.active_claim_id) if st.session_state.active_claim_id in claim_keys else 0
         active_id = st.selectbox(
-            "🎯 Select Verified Claim to Inspect Verification Trace & Dialectic Debate:",
+            "🎯 Select Verified Claim to Inspect:",
             claim_keys,
             index=default_index,
             format_func=lambda cid: f"[{cid}] {format_claim_item(get_field(claims_dict[cid], 'claim'))['statement'][:100]}...",
@@ -879,508 +752,93 @@ with tab_stream:
         )
         st.session_state.active_claim_id = active_id
 
-        # Summary Metric Bar
         s_cstate = claims_dict.get(active_id) if active_id else None
         s_verdict = format_verdict_item(get_field(s_cstate, "verdict"))
         v_str = s_verdict.get("verdict", "Pending") if s_verdict else "Pending"
         conf_str = f"{int(s_verdict.get('confidence', 0.0) * 100)}%" if s_verdict and s_verdict.get("confidence") else "N/A"
 
-        ev_store = get_field(state, "global_evidence_store", {})
-        ev_count = len(ev_store) if isinstance(ev_store, (dict, list)) else 0
-
-        m1, m2, m3, m4, m5 = st.columns(5)
+        m1, m2, m3 = st.columns(3)
         with m1:
             st.metric("Total Claims", len(claims_dict))
         with m2:
             st.metric("Active Claim", active_id or "None")
         with m3:
-            papers_found_count = len(get_field(s_cstate, "discovered_papers_metadata", [])) or len(get_field(s_cstate, "external_papers_found", [])) if s_cstate else 0
-            st.metric("Discovered Sources", papers_found_count)
-        with m4:
-            st.metric("Evidence Bundles", ev_count)
-        with m5:
-            st.metric("Active Verdict", f"{v_str} ({conf_str})")
-
-        st.markdown("---")
-
-        # 1. Ingested Paper Summary
-        with st.expander("📄 Phase 1: Ingested Paper & Structure (`PDFParser`)", expanded=True):
-            paper_obj = get_field(state, "paper")
-            if paper_obj:
-                p_meta = get_field(paper_obj, "metadata")
-                p_title = get_field(p_meta, "title", "Untitled Paper")
-                p_authors = get_field(p_meta, "authors", [])
-                st.markdown(f"**Publication Title:** {p_title or 'Untitled Paper'}")
-                if p_authors:
-                    st.caption(f"Authors: {', '.join(p_authors)}")
-                sections = get_field(paper_obj, "sections", [])
-                raw_text = get_field(paper_obj, "raw_text", "")
-                st.write(f"Parsed **{len(sections)} sections** across **{len(raw_text.split()):,} words**.")
-
-        # 2. Extracted Claims
-        with st.expander(f"🎯 Phase 2: Formalized Scientific Claims ({len(claims_dict)} extracted via `ClaimAnalystAgent`)", expanded=True):
-            for cid, cstate in claims_dict.items():
-                c = format_claim_item(get_field(cstate, "claim"))
-                ctype = c["claim_type"]
-                subject = c["subject"]
-                statement = c["statement"]
-                is_act = (cid == active_id)
-                card_bg = "#EEF2FF" if is_act else "#F8FAFC"
-                st.markdown(f"""
-                <div style="background: {card_bg}; border: 1px solid #CBD5E1; border-left: 4px solid {'#4F46E5' if is_act else '#94A3B8'}; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <b>[{cid}] {subject or 'Scientific Proposition'}</b>
-                        <span class="tag-pill" style="background: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
-                    </div>
-                    <p style="margin: 4px 0; color: #1E293B;"><b>Statement:</b> {statement}</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # 3. Discovered Literature
-        if s_cstate:
-            disc_meta = getattr(s_cstate, "discovered_papers_metadata", [])
-            disc_titles = getattr(s_cstate, "external_papers_found", [])
-            with st.expander(f"🌐 Phase 3: External Literature via Google Search Grounding ({len(disc_meta) or len(disc_titles)} discovered for [{active_id}])", expanded=True):
-                if disc_meta:
-                    for p in disc_meta:
-                        p_url = p.url or f"https://scholar.google.com/scholar?q={p.title.replace(' ', '+')}"
-                        p_score = int((p.relevance_score or 0.85) * 100) if p.relevance_score else 85
-                        p_rel = p.relationship or "RELEVANT"
-                        st.markdown(f"""
-                        <div class="search-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <a href="{p_url}" target="_blank" style="font-weight: 700; color: #0284C7; text-decoration: none;">📄 {p.title}</a>
-                                <span class="tag-pill" style="background: #E0F2FE; color: #0369A1;">{p_rel} • {p_score}% MATCH</span>
-                            </div>
-                            <div style="font-size: 0.85rem; color: #64748B; margin-top: 4px;">
-                                Authors: {', '.join(p.authors[:3]) if p.authors else 'Academic Authors'} ({p.year or 'N/A'}) • Venue: {p.venue or 'Academic Repository'}
-                            </div>
-                            {f'<div style="font-size: 0.85rem; color: #334155; margin-top: 4px; font-style: italic;"><b>Findings:</b> {p.relevance_rationale or p.key_findings}</div>' if (p.relevance_rationale or p.key_findings) else ''}
-                        </div>
-                        """, unsafe_allow_html=True)
-                elif disc_titles:
-                    for t in disc_titles:
-                        st.markdown(f"- 📄 **{t}**")
-
-        # 4. Evidence Extraction
-        with st.expander(f"📚 Phase 4: Grounded Evidence Store ({len(state.global_evidence_store)} bundles extracted via `EvidenceRAGAgent`)", expanded=True):
-            for raw_b in list(state.global_evidence_store.values())[:6]:
-                b = format_evidence_item(raw_b)
-                b_rel = b["relationship"]
-                b_color = "#10B981" if b_rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if b_rel == "CONTRADICTS" else "#F59E0B")
-                st.markdown(f"""
-                <div style="border-left: 3px solid {b_color}; padding-left: 10px; margin-bottom: 8px;">
-                    <span class="tag-pill" style="background-color: {b_color}20; color: {b_color}; font-weight: bold;">{b_rel}</span>
-                    <span style="font-size: 0.85rem; color: #64748B;">Source: <b>{b['source_title']}</b> ({b['location'] or 'Document'})</span>
-                    <p style="margin: 2px 0 0 0; font-size: 0.88rem; color: #1E293B;">"{b['content'][:220]}..."</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-        # 5 & 6. Dialectic Debate
-        if s_cstate:
-            with st.expander("⚔️ Phases 5 & 6: Dialectic Debate Arena (`SupportAgent` vs `AttackAgent`)", expanded=True):
-                dcol1, dcol2 = st.columns(2)
-                with dcol1:
-                    raw_sup = s_cstate.get("support_argument") if isinstance(s_cstate, dict) else getattr(s_cstate, "support_argument", None)
-                    sup = format_argument_item(raw_sup)
-                    if sup:
-                        st.markdown(f"""
-                        <div class="debate-box support-box">
-                            <span class="agent-pill agent-support">🛡️ SUPPORT AGENT</span>
-                            <span style="font-weight: 700; color: #047857;">STANCE: FOR ({sup['strength']})</span>
-                            <p style="margin-top: 6px; font-weight: 600;">{sup['conclusion']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        for p in sup["premises"]:
-                            st.caption(f"• {p}")
-                with dcol2:
-                    raw_atk = s_cstate.get("attack_argument") if isinstance(s_cstate, dict) else getattr(s_cstate, "attack_argument", None)
-                    atk = format_argument_item(raw_atk)
-                    if atk:
-                        st.markdown(f"""
-                        <div class="debate-box attack-box">
-                            <span class="agent-pill agent-attack">⚔️ ATTACK AGENT</span>
-                            <span style="font-weight: 700; color: #BE123C;">STANCE: AGAINST ({atk['strength']})</span>
-                            <p style="margin-top: 6px; font-weight: 600;">{atk['conclusion']}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        for p in atk["premises"]:
-                            st.caption(f"• {p}")
-
-        # 7. Critic Verdict
-        v_formatted = format_verdict_item(s_verdict)
-        if v_formatted:
-            with st.expander("⚖️ Phase 7: Critic Agent Adjudication & 4-Point Peer Audit", expanded=True):
-                v_type = v_formatted["verdict"]
-                v_conf = f"{int(v_formatted['confidence'] * 100)}%"
-                st.markdown(f"**Final Synthesized Verdict:** `{v_type}` ({v_conf} Confidence)")
-                if v_formatted["synthesis_summary"]:
-                    st.info(f"**Scientific Synthesis:** {v_formatted['synthesis_summary']}")
-                f_obj = v_formatted.get("critic_finding")
-                if f_obj:
-                    qc1, qc2, qc3, qc4 = st.columns(4)
-                    with qc1:
-                        st.metric("Grounding", "Verified ✅" if f_obj.get("citation_valid") else "Unverified ❌")
-                    with qc2:
-                        st.metric("Soundness", "Sound ✅" if f_obj.get("reasoning_sound") else "Flawed ❌")
-                    with qc3:
-                        st.metric("Overgeneralization", "Clean ✅" if not f_obj.get("overgeneralization_detected") else "Detected ⚠️")
-                    with qc4:
-                        st.metric("Parity", "Fair ✅" if f_obj.get("fair_comparison") else "Asymmetric ❌")
-
-        # 8. Executive Summary
-        exec_text = st.session_state.get("executive_summary")
-        if exec_text:
-            with st.expander("🧭 Phase 8: Executive Scientific Assessment Summary (`SupervisorAgent`)", expanded=True):
-                st.markdown(exec_text)
-
+            st.metric("Verdict", f"{v_str} ({conf_str})")
     else:
-        st.info("👋 No multi-agent activity recorded yet. In the sidebar, select a paper and click **▶️ Run Full Multi-Agent Pipeline** to watch all agents execute live!")
+        st.info("👋 No multi-agent activity recorded yet. Run the pipeline from the sidebar to begin.")
 
-
-state = st.session_state.state
-
-# -----------------------------------------------------------------------------
 # TAB 1: Paper Overview
-# -----------------------------------------------------------------------------
 with tab_paper:
     st.header("📄 Ingested Paper Overview")
     if state and state.paper:
         paper = state.paper
-        col1, col2, col3 = st.columns([3, 1, 1])
-        with col1:
-            st.subheader(paper.metadata.title or "Untitled Paper")
-            if paper.metadata.authors:
-                st.write(f"**Authors:** {', '.join(paper.metadata.authors)}")
-        with col2:
-            st.metric("Sections Parsed", len(paper.sections))
-        with col3:
-            total_words = len(paper.raw_text.split()) if paper.raw_text else 0
-            st.metric("Word Count", f"{total_words:,}")
-
+        st.subheader(paper.metadata.title or "Untitled Paper")
+        if paper.metadata.authors:
+            st.write(f"**Authors:** {', '.join(paper.metadata.authors)}")
         if paper.metadata.abstract:
             st.info(f"**Abstract:**\n\n{paper.metadata.abstract}")
-
-        st.subheader("📑 Paper Section Browser")
-        with st.expander("Explore Document Sections", expanded=False):
-            for sec in paper.sections:
-                sec_title = getattr(sec, "title", getattr(sec, "heading", "Section")) or "Section"
-                sec_content = getattr(sec, "content", getattr(sec, "text", "")) or ""
-                word_count = len(sec_content.split()) if sec_content else 0
-                st.markdown(f"**{sec_title}** ({word_count} words)")
-                if sec_content:
-                    st.text(sec_content[:300] + ("..." if len(sec_content) > 300 else ""))
-                st.markdown("---")
     else:
-        st.info("👋 No publication loaded yet. Click **▶️ Run Full Multi-Agent Pipeline** in the sidebar to begin!")
+        st.info("No publication loaded yet.")
 
-
-# -----------------------------------------------------------------------------
 # TAB 2: Extracted Claims
-# -----------------------------------------------------------------------------
 with tab_claims:
     st.header("🎯 Formalized Scientific Claims")
     if state and state.claims:
-        st.write(f"The `ClaimAnalystAgent` identified and categorized **{len(state.claims)} testable claims**:")
-
-        # Summary Metric Row
-        mcol1, mcol2, mcol3, mcol4 = st.columns(4)
-        types_count = {}
-        for c in state.claims.values():
-            raw_claim = c.get("claim") if isinstance(c, dict) else getattr(c, "claim", None)
-            c_dict = format_claim_item(raw_claim)
-            ctype = c_dict["claim_type"]
-            types_count[ctype] = types_count.get(ctype, 0) + 1
-
-        with mcol1:
-            st.metric("Total Claims", len(state.claims))
-        with mcol2:
-            st.metric("Efficiency Claims", types_count.get("efficiency", 0))
-        with mcol3:
-            st.metric("Performance Claims", types_count.get("performance", 0))
-        with mcol4:
-            st.metric("Active Inspected Claim", st.session_state.active_claim_id or "None")
-
-        st.markdown("---")
-
-        # Claim Cards
         for cid, cstate in state.claims.items():
-            raw_claim = cstate.get("claim") if isinstance(cstate, dict) else getattr(cstate, "claim", None)
-            claim = format_claim_item(raw_claim)
-            ctype = claim["claim_type"]
-            is_active = (cid == st.session_state.active_claim_id)
-
-            card_border = "#6366F1" if is_active else "#E2E8F0"
-            active_badge = "🌟 **ACTIVE**" if is_active else ""
-
-            with st.container():
-                st.markdown(f"""
-                <div class="claim-card" style="border-color: {card_border}; border-width: {'2px' if is_active else '1px'};">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-weight: 800; color: #4F46E5; font-size: 1.1rem;">[{cid}] {claim['subject'] or 'Proposition'}</span>
-                        <span>
-                            <span class="tag-pill" style="background-color: #E0E7FF; color: #3730A3;">{ctype.upper()}</span>
-                            {active_badge}
-                        </span>
-                    </div>
-                    <p style="font-size: 1rem; color: #1E293B; margin-bottom: 10px;"><b>Statement:</b> {claim['statement']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-
-                ccol1, ccol2 = st.columns([4, 1])
-                with ccol1:
-                    tags_html = ""
-                    if claim["benchmarks"]:
-                        tags_html += "".join([f'<span class="tag-pill">📊 {b}</span>' for b in claim["benchmarks"]])
-                    if claim["metrics"]:
-                        tags_html += "".join([f'<span class="tag-pill">📈 {m}</span>' for m in claim["metrics"]])
-                    if tags_html:
-                        st.markdown(tags_html, unsafe_allow_html=True)
-                with ccol2:
-                    if st.button(f"Select [{cid}]", key=f"btn_select_{cid}", use_container_width=True):
-                        st.session_state.active_claim_id = cid
-                        if hasattr(state, "active_claim_id"):
-                            state.active_claim_id = cid
-                        elif isinstance(state, dict):
-                            state["active_claim_id"] = cid
-                        st.rerun()
-
+            claim = format_claim_item(get_field(cstate, "claim"))
+            st.markdown(f"**[{cid}]** {claim['statement']}")
     else:
-        st.info("Claims have not yet been extracted. Run the pipeline to view formalized propositions.")
+        st.info("Claims have not yet been extracted.")
 
-
-# -----------------------------------------------------------------------------
 # TAB 3: Evidence Explorer
-# -----------------------------------------------------------------------------
 with tab_evidence:
     st.header("🔍 Grounded Scientific Evidence")
     if state and state.global_evidence_store:
-        raw_bundles = [format_evidence_item(b) for b in state.global_evidence_store.values()]
-        st.write(f"Global Evidence Store contains **{len(raw_bundles)} extracted evidence bundles**:")
-
-        # Filter Options
-        relationships = ["ALL", "SUPPORTS", "REPLICATES", "CONTRADICTS", "QUALIFIES"]
-        selected_rel = st.selectbox("Filter Evidence by Relationship:", relationships)
-
-        filtered_bundles = raw_bundles
-        if selected_rel != "ALL":
-            filtered_bundles = [b for b in raw_bundles if b["relationship"] == selected_rel]
-
-        st.caption(f"Showing {len(filtered_bundles)} evidence item(s):")
-
-        for bundle in filtered_bundles:
-            rel = bundle["relationship"]
-            rel_color = "#10B981" if rel in ["SUPPORTS", "REPLICATES"] else ("#EF4444" if rel == "CONTRADICTS" else "#F59E0B")
-
-            with st.expander(f"[{bundle['id']}] {bundle['source_title']} ({rel})", expanded=False):
-                st.markdown(f"""
-                <span class="tag-pill" style="background-color: {rel_color}20; color: {rel_color}; font-weight: bold;">{rel}</span>
-                <span class="tag-pill">📍 Location: {bundle['location'] or 'Paper'}</span>
-                <span class="tag-pill">🎯 Linked Claim: {bundle['claim_id']}</span>
-                """, unsafe_allow_html=True)
-                st.markdown(f"**Evidence Passage:**\n\n> {bundle['content']}")
-                if bundle["context"]:
-                    st.caption(f"Context: {bundle['context']}")
+        for b in state.global_evidence_store.values():
+            item = format_evidence_item(b)
+            st.markdown(f"- **[{item['relationship']}]** {item['source_title']}: {item['content'][:150]}...")
     else:
-        st.info("No evidence units extracted yet. Run the pipeline to collect evidence bundles.")
+        st.info("No evidence units extracted yet.")
 
-
-# -----------------------------------------------------------------------------
 # TAB 4: Dialectic Debate Arena
-# -----------------------------------------------------------------------------
 with tab_debate:
     st.header("⚔️ Adversarial Dialectic Debate Arena")
     active_id = st.session_state.active_claim_id
     if state and active_id and active_id in state.claims:
         cstate = state.claims[active_id]
-        claim_obj = cstate.get("claim") if isinstance(cstate, dict) else getattr(cstate, "claim", None)
-        claim_stmt = get_field(claim_obj, "statement", "")
-        st.subheader(f"Debate on Claim [{active_id}]: \"{claim_stmt}\"")
+        sup_arg = format_argument_item(get_field(cstate, "support_argument"))
+        atk_arg = format_argument_item(get_field(cstate, "attack_argument"))
 
-        col_sup, col_atk = st.columns(2)
-
-        # Support Agent Column
-        with col_sup:
-            st.markdown("""
-            <div class="debate-box support-box">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                    <span class="agent-pill agent-support">🛡️ SUPPORT AGENT (Proponent)</span>
-                    <span style="font-weight: 700; color: #047857;">STANCE: FOR</span>
-                </div>
-            """, unsafe_allow_html=True)
-
-            raw_sup = cstate.get("support_argument") if isinstance(cstate, dict) else getattr(cstate, "support_argument", None)
-            sup_arg = format_argument_item(raw_sup)
+        c_sup, c_atk = st.columns(2)
+        with c_sup:
+            st.markdown("### 🛡️ Proponent (Support)")
             if sup_arg:
-                st.markdown(f"**Argument Strength:** `{sup_arg['strength']}`")
-                st.markdown(f"**Conclusion:**\n> {sup_arg['conclusion']}")
-                st.markdown("**Core Affirmative Premises:**")
-                for i, p in enumerate(sup_arg["premises"], 1):
-                    st.write(f"• {p}")
-                if sup_arg["cited_evidence_ids"]:
-                    st.markdown(f"**Cited Evidence Bundles:** `{'`, `'.join(sup_arg['cited_evidence_ids'])}`")
-            else:
-                st.info("Support argument has not been constructed yet.")
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        # Attack Agent Column
-        with col_atk:
-            st.markdown("""
-            <div class="debate-box attack-box">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                    <span class="agent-pill agent-attack">⚔️ ATTACK AGENT (Adversary)</span>
-                    <span style="font-weight: 700; color: #BE123C;">STANCE: AGAINST</span>
-                </div>
-            """, unsafe_allow_html=True)
-
-            raw_atk = cstate.get("attack_argument") if isinstance(cstate, dict) else getattr(cstate, "attack_argument", None)
-            atk_arg = format_argument_item(raw_atk)
+                st.write(sup_arg["conclusion"])
+        with c_atk:
+            st.markdown("### ⚔️ Adversary (Attack)")
             if atk_arg:
-                st.markdown(f"**Attack Strength:** `{atk_arg['strength']}`")
-                st.markdown(f"**Counter-Conclusion:**\n> {atk_arg['conclusion']}")
-                st.markdown("**Counter-Premises & Vulnerabilities:**")
-                for i, p in enumerate(atk_arg["premises"], 1):
-                    st.write(f"• {p}")
-                if atk_arg["identified_limitations"]:
-                    st.markdown("**Identified Limitations:**")
-                    for lim in atk_arg["identified_limitations"]:
-                        st.caption(f"⚠️ {lim}")
-                if atk_arg["cited_evidence_ids"]:
-                    st.markdown("**External Grounded Citations:**")
-                    for url in atk_arg["cited_evidence_ids"]:
-                        st.markdown(f"- [{url}]({url})")
-            else:
-                st.info("Attack argument has not been constructed yet.")
-
-            st.markdown("</div>", unsafe_allow_html=True)
+                st.write(atk_arg["conclusion"])
     else:
-        st.info("Select a claim in the **Extracted Claims** tab to view the adversarial debate.")
+        st.info("Select a claim to view debate.")
 
-
-# -----------------------------------------------------------------------------
 # TAB 5: Final Verdict & Scientific Report
-# -----------------------------------------------------------------------------
 with tab_verdict:
     st.header("⚖️ Critic Verdict & Executive Report")
     active_id = st.session_state.active_claim_id
     if state and active_id and active_id in state.claims:
-        cstate = state.claims[active_id]
-        raw_v = cstate.get("verdict") if isinstance(cstate, dict) else getattr(cstate, "verdict", None)
-        verdict_obj = format_verdict_item(raw_v)
-
+        verdict_obj = format_verdict_item(get_field(state.claims[active_id], "verdict"))
         if verdict_obj:
-            v_type = verdict_obj["verdict"]
-            confidence = float(verdict_obj["confidence"] or 0.0)
+            st.metric("Verdict", verdict_obj["verdict"], f"{int(verdict_obj['confidence']*100)}% Confidence")
+            st.write(verdict_obj["synthesis_summary"])
 
-            css_class = "verdict-inconclusive"
-            badge_icon = "⚪"
-            if v_type == "Supported":
-                css_class = "verdict-supported"
-                badge_icon = "🟢"
-            elif v_type == "Partially Supported":
-                css_class = "verdict-partially"
-                badge_icon = "🟡"
-            elif v_type == "Unsupported":
-                css_class = "verdict-unsupported"
-                badge_icon = "🔴"
-
-            # Big Colorful Hero Verdict
-            st.markdown(f"""
-            <div class="verdict-card {css_class}">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h2 style="margin: 0; font-size: 1.8rem;">{badge_icon} Final Verdict: {v_type}</h2>
-                        <p style="margin: 4px 0 0 0; font-size: 1.05rem;">Evaluated on Claim [{active_id}]</p>
-                    </div>
-                    <div style="text-align: right;">
-                        <h1 style="margin: 0; font-size: 2.2rem;">{int(confidence*100)}%</h1>
-                        <span style="font-size: 0.85rem; font-weight: bold; text-transform: uppercase;">Confidence Score</span>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Confidence Progress Bar
-            st.progress(confidence)
-
-            # Critic Diagnostic Checklist
-            finding = verdict_obj.get("critic_finding")
-            if finding:
-                st.subheader("🔍 Critic Agent Quality Audits")
-                c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    is_cv = finding.get("citation_valid", False)
-                    st.metric("Citation Grounding", "Verified ✅" if is_cv else "Unverified ❌")
-                with c2:
-                    is_rs = finding.get("reasoning_sound", False)
-                    st.metric("Reasoning Soundness", "Sound ✅" if is_rs else "Flawed ❌")
-                with c3:
-                    is_og = finding.get("overgeneralization_detected", False)
-                    st.metric("Overgeneralization", "Detected ⚠️" if is_og else "Clean ✅")
-                with c4:
-                    is_fc = finding.get("fair_comparison", False)
-                    st.metric("Comparative Parity", "Fair ✅" if is_fc else "Asymmetric ❌")
-
-                if finding.get("critique_notes"):
-                    st.info(f"**Critic Notes:** {finding['critique_notes']}")
-
-            # Scientific Synthesis Summary
-            if verdict_obj["synthesis_summary"]:
-                st.markdown("### 📝 Scientific Synthesis Summary")
-                st.markdown(f"> {verdict_obj['synthesis_summary']}")
-
-        else:
-            st.info("Verdict has not been synthesized for this claim yet.")
-
-        # Full Executive Summary
-        st.markdown("---")
-        st.subheader("📑 Full Executive Scientific Summary")
         exec_sum = st.session_state.get("executive_summary")
         if exec_sum:
-            with st.container(border=True):
-                st.markdown(exec_sum)
-
-            # Export Buttons
-            st.markdown("### 📥 Export Scientific Assessment")
-            bcol1, bcol2 = st.columns(2)
-            with bcol1:
-                st.download_button(
-                    label="📄 Download Report (Markdown)",
-                    data=exec_sum,
-                    file_name=f"mascv_report_{active_id}.md",
-                    mime="text/markdown",
-                    use_container_width=True,
-                )
-            with bcol2:
-                paper_title = "Unknown"
-                if state.paper and getattr(state.paper, "metadata", None):
-                    paper_title = getattr(state.paper.metadata, "title", "Unknown")
-                claims_export = {}
-                for cid, c in state.claims.items():
-                    c_claim = c.get("claim") if isinstance(c, dict) else getattr(c, "claim", None)
-                    claims_export[cid] = c_claim.model_dump() if hasattr(c_claim, "model_dump") else c_claim
-                report_json = {
-                    "claim_id": active_id,
-                    "paper_title": paper_title,
-                    "claims": claims_export,
-                    "verdict": verdict_obj,
-                    "executive_summary": exec_sum,
-                }
-                st.download_button(
-                    label="💾 Download Raw Data (JSON)",
-                    data=json.dumps(report_json, indent=2, default=str),
-                    file_name=f"mascv_state_{active_id}.json",
-                    mime="application/json",
-                    use_container_width=True,
-                )
-
+            st.markdown("### Executive Summary")
+            st.markdown(exec_sum)
     else:
-        st.info("Run the pipeline or select a claim to view final scientific verdicts and reports.")
+        st.info("Select a claim to view verdict.")
 
-# -----------------------------------------------------------------------------
-# Execution History Drawer
-# -----------------------------------------------------------------------------
+# Execution Log Drawer
 if st.session_state.execution_logs:
     with st.expander("📜 Live Multi-Agent Execution Log", expanded=False):
         for log in reversed(st.session_state.execution_logs):

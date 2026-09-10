@@ -11,13 +11,16 @@ from mascv.utils.text_processing import extract_json_from_text
 logger = get_logger(__name__)
 
 
+_SENTINEL = object()
+
+
 class ClaimAnalystAgent(BaseAgent):
     """Extracts testable, meaningful propositions from target research papers."""
 
     def __init__(
         self,
         config: Optional[Dict[str, Any]] = None,
-        llm_client: Optional[Any] = None,
+        llm_client: Any = _SENTINEL,
     ) -> None:
         if config is None:
             try:
@@ -32,12 +35,15 @@ class ClaimAnalystAgent(BaseAgent):
         self.thinking_level = agent_config.get("thinking_level", "HIGH")
         self.temperature = agent_config.get("temperature", 0.2)
 
-        from mascv.utils.llm import LLMClient
-        self.llm_client = llm_client or LLMClient(
-            model_name=self.model_name,
-            temperature=self.temperature,
-            thinking_level=self.thinking_level,
-        )
+        if llm_client is not _SENTINEL:
+            self.llm_client = llm_client
+        else:
+            from mascv.utils.llm import LLMClient
+            self.llm_client = LLMClient(
+                model_name=self.model_name,
+                temperature=self.temperature,
+                thinking_level=self.thinking_level,
+            )
 
         params = agent_config.get("parameters", {})
         self.max_claims = params.get("max_claims_to_extract", 5)

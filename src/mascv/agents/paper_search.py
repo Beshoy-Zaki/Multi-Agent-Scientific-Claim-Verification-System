@@ -108,6 +108,26 @@ class PaperSearchAgent(BaseAgent):
 
         logger.info("Executing Gemma 4 Grounded PaperSearch for: '%s'", statement[:80])
 
+        # Extract target paper metadata to enforce target paper exclusion
+        target_paper = getattr(state, "paper", None) if hasattr(state, "paper") else (state.get("paper") if isinstance(state, dict) else None)
+        target_meta = getattr(target_paper, "metadata", None) if target_paper else None
+        target_paper_info = {}
+        if target_meta:
+            target_paper_info = {
+                "title": getattr(target_meta, "title", "") or "",
+                "arxiv_id": getattr(target_meta, "arxiv_id", "") or "",
+                "doi": getattr(target_meta, "doi", "") or "",
+                "authors": getattr(target_meta, "authors", []) or [],
+            }
+        elif isinstance(target_paper, dict):
+            p_meta = target_paper.get("metadata", {}) or {}
+            target_paper_info = {
+                "title": p_meta.get("title") or target_paper.get("title") or "",
+                "arxiv_id": p_meta.get("arxiv_id") or target_paper.get("arxiv_id") or "",
+                "doi": p_meta.get("doi") or target_paper.get("doi") or "",
+                "authors": p_meta.get("authors") or target_paper.get("authors") or [],
+            }
+
         # Discover papers using Gemma 4 with live web grounding
         discovered_papers = self.search_literature(
             claim_statement=statement,
@@ -115,6 +135,7 @@ class PaperSearchAgent(BaseAgent):
             claim_type=str(claim_type),
             subject=str(subject),
             benchmarks=benchmarks,
+            target_paper_info=target_paper_info,
         )
 
         # Store discovered papers in state (preserving both titles and full metadata)
@@ -145,6 +166,7 @@ class PaperSearchAgent(BaseAgent):
         subject: Optional[str] = None,
         benchmarks: Optional[str] = None,
         adversarial_focus: Optional[str] = None,
+        target_paper_info: Optional[Dict[str, Any]] = None,
     ) -> List[PaperMetadata]:
         """Perform prompt-driven academic search across arXiv, Semantic Scholar, PubMed, etc.
         
@@ -169,6 +191,20 @@ class PaperSearchAgent(BaseAgent):
             .replace("{adversarial_focus}", clean_adversarial)
             .replace("{max_papers}", str(self.max_papers))
         )
+
+        if target_paper_info and target_paper_info.get("title"):
+            t_title_val = target_paper_info.get("title", "")
+            t_auth_val = ", ".join(target_paper_info.get("authors", []))
+            target_context = (
+                f"\n=== TARGET RESEARCH PAPER (UNDER INVESTIGATION) ===\n"
+                f"Title: {t_title_val}\n"
+                f"Authors: {t_auth_val}\n"
+                f"Identifier: {target_paper_info.get('arxiv_id') or target_paper_info.get('doi') or 'N/A'}\n"
+                f"CRITICAL MANDATE: You are investigating claims made by THIS paper. You MUST NOT return this target paper as an external source. "
+                f"All retrieved literature MUST be INDEPENDENT external work from other research groups.\n"
+                f"====================================================\n\n"
+            )
+            formatted_prompt = target_context + formatted_prompt
 
         # Dynamically omit benchmarks if empty or generic
         clean_bench = str(benchmarks or "").strip()
@@ -218,6 +254,11 @@ class PaperSearchAgent(BaseAgent):
                     or [raw_papers]
                 )
 
+            # Target paper normalization for programmatic exclusion filter
+            t_norm_title = re.sub(r"[^a-z0-9]", "", target_paper_info.get("title", "").lower()) if target_paper_info else ""
+            t_arxiv = str(target_paper_info.get("arxiv_id", "") or "").strip().lower() if target_paper_info else ""
+            t_doi = str(target_paper_info.get("doi", "") or "").strip().lower() if target_paper_info else ""
+
             # 4. Domain safety filter & PaperMetadata conversion
             papers: List[PaperMetadata] = []
             for item in raw_papers:
@@ -244,6 +285,22 @@ class PaperSearchAgent(BaseAgent):
                     if match:
                         doi = match.group(1)
 
+                # Programmatic target-paper exclusion to prevent circular self-support
+                item_title = str(item.get("title") or "")
+                norm_item_title = re.sub(r"[^a-z0-9]", "", item_title.lower())
+                if t_norm_title and len(t_norm_title) > 6:
+                    if norm_item_title == t_norm_title or (len(norm_item_title) > 10 and (t_norm_title in norm_item_title or norm_item_title in t_norm_title)):
+                        logger.info("Excluding target paper from external search results by title: '%s'", item_title)
+                        continue
+
+                if t_arxiv and arxiv_id and (t_arxiv in arxiv_id.lower() or arxiv_id.lower() in t_arxiv):
+                    logger.info("Excluding target paper from external search results by arXiv ID: '%s'", arxiv_id)
+                    continue
+
+                if t_doi and doi and (t_doi in doi.lower() or doi.lower() in t_doi):
+                    logger.info("Excluding target paper from external search results by DOI: '%s'", doi)
+                    continue
+
                 metadata = PaperMetadata(
                     title=item.get("title", "Untitled Publication"),
                     authors=item.get("authors") or [],
@@ -257,6 +314,8 @@ class PaperSearchAgent(BaseAgent):
                     relevance_score=item.get("relevance_score"),
                     relevance_rationale=item.get("relevance_rationale"),
                     key_findings=item.get("key_findings"),
+                    source_type="EXTERNAL_SOURCE",
+                    is_independent=True,
                 )
                 papers.append(metadata)
 

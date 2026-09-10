@@ -81,6 +81,49 @@ class TestPaperSearchAgent(unittest.TestCase):
         self.assertEqual(papers[1].relationship, "CONTRADICTS")
         self.assertIn("14% performance degradation", papers[1].key_findings)
 
+    def test_paper_search_filters_out_target_paper(self):
+        """Programmatic rejection: Target paper candidates must be excluded to prevent self-validation."""
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = """
+        [
+          {
+            "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+            "authors": ["Edward J. Hu", "Yelong Shen"],
+            "year": 2021,
+            "arxiv_id": "2106.09685",
+            "url": "https://arxiv.org/abs/2106.09685",
+            "relationship": "SUPPORTS"
+          },
+          {
+            "title": "Independent Evaluation of Parameter-Efficient Fine-Tuning",
+            "authors": ["Independent Researcher"],
+            "year": 2023,
+            "arxiv_id": "2305.12345",
+            "url": "https://arxiv.org/abs/2305.12345",
+            "relationship": "SUPPORTS"
+          }
+        ]
+        """
+        agent = PaperSearchAgent(llm_client=mock_llm)
+        target_meta = {
+            "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+            "arxiv_id": "2106.09685",
+        }
+
+        papers = agent.search_literature(
+            claim_statement="LoRA reduces trainable parameters.",
+            claim_id="C1",
+            target_paper_info=target_meta,
+        )
+
+        # The target paper itself must be dropped; only the independent paper kept
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0].arxiv_id, "2305.12345")
+        self.assertEqual(papers[0].title, "Independent Evaluation of Parameter-Efficient Fine-Tuning")
+        self.assertEqual(papers[0].source_type, "EXTERNAL_SOURCE")
+        self.assertTrue(papers[0].is_independent)
+
+
 
 if __name__ == "__main__":
     unittest.main()

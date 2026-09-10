@@ -1,4 +1,4 @@
-﻿"""Unit tests for SupportAgent (Agent 5)."""
+"""Unit tests for SupportAgent (Agent 5)."""
 
 from unittest.mock import MagicMock
 
@@ -63,6 +63,8 @@ def _evidence_store():
             "context": "CIFAR-100",
             "relationship": "SUPPORTS",
             "confidence_score": 0.9,
+            "source_type": "EXTERNAL_SOURCE",
+            "is_independent": True,
         },
         "E-2": {
             "id": "E-2",
@@ -74,6 +76,8 @@ def _evidence_store():
             "context": "ImageNet",
             "relationship": "REPLICATES",
             "confidence_score": 0.85,
+            "source_type": "EXTERNAL_SOURCE",
+            "is_independent": True,
         },
         "E-3": {
             "id": "E-3",
@@ -85,6 +89,8 @@ def _evidence_store():
             "context": "OOD benchmark",
             "relationship": "CONTRADICTS",
             "confidence_score": 0.8,
+            "source_type": "EXTERNAL_SOURCE",
+            "is_independent": True,
         },
     }
 
@@ -204,3 +210,72 @@ def test_support_agent_missing_active_claim_raises():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_support_agent_zero_independent_evidence_sets_weak_and_false_flag():
+    """When only TARGET_PAPER internal evidence is present, SupportAgent flags has_independent_evidence=False."""
+    llm = MagicMock()
+    agent = SupportAgent(llm=llm)
+
+    internal_store = {
+        "E-TARGET": {
+            "id": "E-TARGET",
+            "claim_id": "C1",
+            "source_paper_id": "TARGET_P1",
+            "source_title": "Target Paper Itself",
+            "location": "Section 4.1",
+            "content": "We achieve 98% accuracy on our custom dataset.",
+            "context": "Internal Evaluation",
+            "relationship": "SUPPORTS",
+            "confidence_score": 0.95,
+            "source_type": "TARGET_PAPER",
+            "is_independent": False,
+        }
+    }
+
+    state = {
+        "active_claim_id": "C1",
+        "claims": {
+            "C1": {
+                "claim": {"id": "C1", "statement": "Target algorithm achieves 98% accuracy."},
+                "evidence_bundle_ids": ["E-TARGET"],
+            }
+        },
+        "global_evidence_store": internal_store,
+    }
+
+    out_state = agent.execute(state)
+    argument = out_state["claims"]["C1"]["support_argument"]
+
+    assert argument.has_independent_evidence is False
+    assert argument.strength == "Weak"
+    assert "target paper alone" in argument.conclusion.lower()
+    assert any("[TARGET PAPER INTERNAL]" in p for p in argument.premises)
+
+
+def test_support_agent_rejects_evidence_from_another_claim():
+    """A valid external source for C2 must not be counted as C1 support."""
+    llm = MagicMock()
+    agent = SupportAgent(llm=llm)
+    state = _base_state()
+    state["global_evidence_store"] = {
+        "E-C2": {
+            "id": "E-C2",
+            "claim_id": "C2",
+            "source_paper_id": "P2",
+            "source_title": "External replication for a different claim",
+            "location": "p. 4",
+            "content": "This evidence belongs only to C2.",
+            "relationship": "SUPPORTS",
+            "source_type": "EXTERNAL_SOURCE",
+            "is_independent": True,
+        }
+    }
+    state["claims"]["C1"]["evidence_bundle_ids"] = ["E-C2"]
+
+    argument = agent.execute(state)["claims"]["C1"]["support_argument"]
+
+    assert argument.has_independent_evidence is False
+    assert argument.cited_evidence_ids == []
+    llm.with_structured_output.return_value.invoke.assert_not_called()
+

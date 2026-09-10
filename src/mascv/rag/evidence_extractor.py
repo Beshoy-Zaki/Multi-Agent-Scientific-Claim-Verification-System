@@ -3,7 +3,7 @@ import logging
 from typing import Any, List, Literal, Optional
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from mascv.utils.llm import LLMClient
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class ExtractedEvidence(BaseModel):
     """Structured result returned by the evidence extraction model."""
 
-    relevant: bool = Field(
+    relevant: StrictBool = Field(
         default=True,
         description="Whether the text contains evidence relevant to the claim.",
     )
@@ -91,6 +91,7 @@ class EvidenceExtractor:
 
         if llm is not None:
             self.llm = llm
+            self.llm_client = None
         else:
             self.llm = ChatGoogleGenerativeAI(
                 model=model_name,
@@ -98,12 +99,12 @@ class EvidenceExtractor:
                 max_retries=2,
                 timeout=120.0,
             )
+            self.llm_client = LLMClient(
+                model_name=model_name,
+                temperature=0.2,
+                thinking_level="minimal",
+            )
 
-        self.llm_client = LLMClient(
-            model_name=model_name,
-            temperature=0.2,
-            thinking_level="minimal",
-        )
         self.structured_llm = self.llm.with_structured_output(
             ExtractedEvidence
         )
@@ -149,23 +150,25 @@ Rules:
             "}\n"
         )
 
-        try:
-            raw_text = self.llm_client.generate(prompt=json_prompt)
-            json_str = extract_json_from_text(raw_text)
-            data = json.loads(json_str) if json_str else {}
-            return ExtractedEvidence(**data)
-        except Exception as exc:
-            logger.info("EvidenceExtractor LLMClient extraction failed: %s. Trying structured output.", exc)
+        if self.llm_client is not None:
             try:
-                return self.structured_llm.invoke(prompt)
-            except Exception as raw_exc:
-                logger.warning(
-                    "Structured evidence extraction parse failed: %s. Using heuristic fallback.", raw_exc
-                )
-                return ExtractedEvidence(
-                    relevant=True,
-                    relationship="SUPPORTS",
-                    evidence_text=chunk[:300].strip(),
-                    context="Passage from target paper discussing claim methodology and empirical results.",
-                    confidence_score=0.85,
-                )
+                raw_text = self.llm_client.generate(prompt=json_prompt)
+                json_str = extract_json_from_text(raw_text)
+                data = json.loads(json_str) if json_str else {}
+                return ExtractedEvidence(**data)
+            except Exception as exc:
+                logger.info("EvidenceExtractor LLMClient extraction failed: %s. Trying structured output.", exc)
+
+        try:
+            return self.structured_llm.invoke(prompt)
+        except Exception as raw_exc:
+            logger.warning(
+                "Structured evidence extraction parse failed: %s. Using heuristic fallback.", raw_exc
+            )
+            return ExtractedEvidence(
+                relevant=True,
+                relationship="QUALIFIES",
+                evidence_text=chunk[:300].strip(),
+                context="Passage evaluated under constrained automated parsing fallback.",
+                confidence_score=0.50,
+            )

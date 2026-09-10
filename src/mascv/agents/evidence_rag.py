@@ -9,6 +9,7 @@ from mascv.agents.base import BaseAgent
 from mascv.models.evidence import (
     EvidenceBundle,
     EvidenceRelationship,
+    SourceType,
 )
 
 from mascv.rag.document_parser import parse_pdf
@@ -207,25 +208,20 @@ class EvidenceRAGAgent(BaseAgent):
 
         if target_paper:
             if hasattr(target_paper, "model_dump"):
-                papers.append(
-                    target_paper.model_dump()
-                )
+                p_target = target_paper.model_dump()
+            elif isinstance(target_paper, dict):
+                p_target = dict(target_paper)
             else:
-                papers.append(target_paper)
+                p_target = {"id": "target_paper", "title": "Target Paper"}
 
-        # 1. Check metadata.external_papers
-        metadata = state.get("metadata", {}) or {}
-        external_papers = list(metadata.get("external_papers", []))
+            p_target["source_type"] = SourceType.TARGET_PAPER.value
+            p_target["is_independent"] = False
+            papers.append(p_target)
 
-        # 2. Check metadata.discovered_papers_metadata (from PaperSearchAgent)
         active_claim_id = state.get("active_claim_id")
-        discovered_meta = metadata.get("discovered_papers_metadata", {})
-        if isinstance(discovered_meta, dict) and active_claim_id in discovered_meta:
-            external_papers.extend(discovered_meta[active_claim_id])
-        elif isinstance(discovered_meta, list):
-            external_papers.extend(discovered_meta)
+        external_papers = []
 
-        # 3. Check active claim's discovered_papers_metadata
+        # 1. Check active claim's discovered_papers_metadata strictly for active_claim_id
         claims = state.get("claims", {})
         if active_claim_id and active_claim_id in claims:
             c_state = claims[active_claim_id]
@@ -235,6 +231,14 @@ class EvidenceRAGAgent(BaseAgent):
                 else c_state.get("discovered_papers_metadata", [])
             )
             for cp in claim_papers:
+                if cp not in external_papers:
+                    external_papers.append(cp)
+
+        # 2. Check metadata.discovered_papers_metadata strictly for active_claim_id (prevent cross-claim leakage)
+        metadata = state.get("metadata", {}) or {}
+        discovered_meta = metadata.get("discovered_papers_metadata", {})
+        if isinstance(discovered_meta, dict) and active_claim_id in discovered_meta:
+            for cp in discovered_meta[active_claim_id]:
                 if cp not in external_papers:
                     external_papers.append(cp)
 
@@ -256,6 +260,8 @@ class EvidenceRAGAgent(BaseAgent):
                 title = p_dict.get("title", "")
                 p_dict["raw_text"] = f"Title: {title}\nAbstract: {abstract}\nKey Findings: {findings}".strip()
 
+            p_dict["source_type"] = SourceType.EXTERNAL_SOURCE.value
+            p_dict["is_independent"] = True
             papers.append(p_dict)
 
         return papers
@@ -319,6 +325,8 @@ class EvidenceRAGAgent(BaseAgent):
                                 "section": section_title,
                                 "page_number": page_number,
                                 "paper_id": paper["id"],
+                                "source_type": paper.get("source_type", SourceType.EXTERNAL_SOURCE.value),
+                                "is_independent": paper.get("is_independent", True),
                                 "paper": paper,
                             }
                         )
@@ -356,6 +364,8 @@ class EvidenceRAGAgent(BaseAgent):
                         "section": "Unknown",
                         "page_number": None,
                         "paper_id": paper["id"],
+                        "source_type": paper.get("source_type", SourceType.EXTERNAL_SOURCE.value),
+                        "is_independent": paper.get("is_independent", True),
                         "paper": paper,
                     }
                 )
@@ -381,6 +391,9 @@ class EvidenceRAGAgent(BaseAgent):
                 f"Section {chunk.get('section', 'Unknown')}"
             )
 
+        source_type_val = paper.get("source_type") or chunk.get("source_type") or SourceType.EXTERNAL_SOURCE.value
+        is_independent_val = paper.get("is_independent", chunk.get("is_independent", True))
+
         return EvidenceBundle(
             id=f"E-{uuid4().hex[:8]}",
             claim_id=claim["id"],
@@ -390,6 +403,8 @@ class EvidenceRAGAgent(BaseAgent):
                 or (paper.get("metadata", {}).get("title") if isinstance(paper.get("metadata"), dict) else None)
                 or paper.get("id", "Unknown Paper")
             ),
+            source_type=source_type_val,
+            is_independent=is_independent_val,
             location=location,
             content=extracted.evidence_text,
             context=extracted.context,

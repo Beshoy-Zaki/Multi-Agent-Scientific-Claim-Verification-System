@@ -42,6 +42,7 @@ prompts:
     2. ZERO FABRICATION: Do NOT invent hypothetical papers, fictitious DOIs, or placeholder authors. If a specific paper is not found in search results, do not include it.
     3. REPOSITORY URLS ONLY: The `url` field must point directly to a legitimate academic repository (e.g., https://arxiv.org/abs/..., https://www.semanticscholar.org/paper/..., https://doi.org/...).
     4. REJECT NON-ACADEMIC SOURCES: Automatically reject personal blogs, Medium posts, Reddit/forums, corporate PR announcements, and generic news articles.
+    5. TARGET PAPER EXCLUSION: You are investigating propositions made by the target research paper. You are STRICTLY FORBIDDEN from returning the target paper itself as an external source. All discovered publications must be INDEPENDENT external research by other authors and institutions.
 
     === METADATA & EVIDENCE EXTRACTION RULES ===
     For every discovered publication, extract:

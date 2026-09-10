@@ -43,12 +43,12 @@ class CriticResult(BaseModel):
     )
 
     verdict: Literal["Supported", "Partially Supported", "Unsupported", "Inconclusive"] = Field(
-        default="Supported",
+        default="Inconclusive",
         description="Choose: Supported, Partially Supported, Unsupported, or Inconclusive.",
     )
 
     confidence: float = Field(
-        default=0.88,
+        default=0.0,
         ge=0.0,
         le=1.0,
         description="Confidence in the verdict from 0.0 to 1.0.",
@@ -60,7 +60,7 @@ class CriticResult(BaseModel):
     )
 
     winner: Literal["Support", "Attack", "Neither"] = Field(
-        default="Support",
+        default="Neither",
         description="Choose: Support, Attack, or Neither.",
     )
 
@@ -92,7 +92,7 @@ class CriticResult(BaseModel):
                 return "Inconclusive"
             if "Support" in s:
                 return "Supported"
-        return "Supported"
+        return "Inconclusive"
 
     @field_validator("winner", mode="before")
     @classmethod
@@ -101,11 +101,11 @@ class CriticResult(BaseModel):
             s = v.strip().title()
             if "Attack" in s:
                 return "Attack"
-            if "Neither" in s:
-                return "Neither"
             if "Support" in s:
                 return "Support"
-        return "Support"
+            if "Neither" in s:
+                return "Neither"
+        return "Neither"
 
     @field_validator("confidence", mode="before")
     @classmethod
@@ -114,7 +114,7 @@ class CriticResult(BaseModel):
             val = float(v)
             return max(0.0, min(1.0, val))
         except Exception:
-            return 0.85
+            return 0.0
 
 
 class CriticAgent(BaseAgent):
@@ -133,6 +133,7 @@ class CriticAgent(BaseAgent):
 
         if llm is not None:
             self.llm = llm
+            self.llm_client = None
         else:
             model_name = self.config.get("model", "gemma-4-26b-a4b-it")
             temperature = float(self.config.get("temperature", 0.1))
@@ -142,15 +143,21 @@ class CriticAgent(BaseAgent):
                 max_retries=2,
                 timeout=120.0,
             )
+            from mascv.utils.llm import LLMClient
+            self.llm_client = LLMClient(
+                model_name=model_name,
+                temperature=temperature,
+                thinking_level="minimal",
+            )
 
-        from mascv.utils.llm import LLMClient
-        self.llm_client = LLMClient(
-            model_name=self.config.get("model", "gemma-4-26b-a4b-it"),
-            temperature=float(self.config.get("temperature", 0.1)),
-            thinking_level="minimal",
-        )
+        if hasattr(self.llm, "with_structured_output"):
+            try:
+                self.structured_llm = self.llm.with_structured_output(CriticResult)
+            except Exception:
+                self.structured_llm = None
+        else:
+            self.structured_llm = None
 
-        self.structured_llm = self.llm.with_structured_output(CriticResult)
         self.tools = [calculate]
 
     def execute(
@@ -186,6 +193,14 @@ class CriticAgent(BaseAgent):
             claim.get("statement", "") if isinstance(claim, dict) else getattr(claim, "statement", str(claim))
         )
 
+        # Inspect whether support argument has independent empirical evidence
+        support_has_independent = False
+        if support_arg:
+            if hasattr(support_arg, "has_independent_evidence"):
+                support_has_independent = support_arg.has_independent_evidence is True
+            elif isinstance(support_arg, dict):
+                support_has_independent = support_arg.get("has_independent_evidence") is True
+
         # Format support text
         support_summary = "No affirmative argument available."
         if support_arg:
@@ -208,6 +223,9 @@ class CriticAgent(BaseAgent):
             claim_text=claim_statement,
             support_summary=support_summary,
             attack_summary=attack_summary,
+            support_arg=support_arg if isinstance(support_arg, Argument) else None,
+            attack_arg=attack_arg if isinstance(attack_arg, Argument) else None,
+            support_has_independent=support_has_independent,
         )
 
         status_msg = f"Verdict formulated: {verdict.verdict.value} (Confidence: {verdict.confidence:.2f})."
@@ -232,6 +250,7 @@ class CriticAgent(BaseAgent):
         attack_summary: str = "",
         support_arg: Optional[Argument] = None,
         attack_arg: Optional[Argument] = None,
+        support_has_independent: bool = True,
     ) -> Verdict:
         """
         Weigh the proponent case vs adversarial case and synthesize the scientific verdict.
@@ -250,17 +269,34 @@ SUPPORT ARGUMENT:
 ATTACK ARGUMENT:
 {attack_summary or (str(attack_arg) if attack_arg else "None")}
 
-Evaluate the arguments across four dimensions:
-1. Citation Grounding: Does the cited evidence legitimately support the claims?
-2. Experimental Parity: Are the baseline models and setups comparable?
-3. Generalization: Does the empirical evidence justify the claimed scope?
-4. Comparison: Are the arguments directly engaging with the same proposition?
+INDEPENDENT EVIDENCE STATUS:
+Support has independent external evidence: {support_has_independent}
+
+CRITICAL SCIENTIFIC EVALUATION RULES:
+1. NON-CIRCULARITY (Target Paper Cannot Validate Itself):
+   A claim cannot be validated solely by citations or data from the target paper under evaluation.
+   If support has independent external evidence is False, independent replication is absent.
+   Under NO CIRCUMSTANCES may you assign "Supported" without independent external corroboration.
+   The maximum verdict for a claim lacking independent external evidence is "Inconclusive"
+   (or "Partially Supported" only if strictly scoped to target-paper internal consistency).
+
+2. EVIDENCE OVER RHETORIC:
+   Evaluate claims based on empirical evidence rather than rhetorical persuasiveness.
+   Downweight purely theoretical or speculative objections that cite no empirical data.
+   Weight [INDEPENDENT REPLICATION] and [DIRECTLY EVIDENCED] premises highest.
+   Treat [TARGET PAPER INTERNAL] premises as unverified hypotheses unless externally confirmed.
+
+3. ADJUDICATION CRITERIA:
+   - Citation Grounding: Does the cited evidence legitimately support the claims?
+   - Experimental Parity: Are baseline models, datasets, and conditions genuinely comparable?
+   - Generalization: Does the empirical evidence justify the claimed scope, or is it overgeneralized?
+   - Comparison: Are the arguments directly engaging with the same proposition?
 
 Select exactly one Verdict:
-- "Supported": Claim is firmly backed by empirical findings with high confidence.
-- "Partially Supported": Claim holds true under specific constraints or subsets of metrics.
+- "Supported": Claim is firmly backed by independent empirical findings from external literature with high confidence.
+- "Partially Supported": Claim holds true under specific constraints, subsets of metrics, or internal validation only.
 - "Unsupported": Empirical evidence refutes the claim or reveals critical failures.
-- "Inconclusive": Insufficient or contradictory data prevents a decisive verdict.
+- "Inconclusive": Insufficient, missing, or contradictory independent external data prevents a decisive verdict.
 """
 
         json_prompt = (
@@ -282,13 +318,30 @@ Select exactly one Verdict:
         )
 
         critic_result = None
-        try:
-            raw_text = self.llm_client.generate(prompt=json_prompt)
-            json_str = extract_json_from_text(raw_text)
-            data = json.loads(json_str) if json_str else {}
-            critic_result = CriticResult(**data)
-        except Exception as exc:
-            logger.info("CriticAgent LLMClient generation failed: %s. Trying fallback LLM.", exc)
+
+        # 1. Try structured LLM if available (used in unit tests and structured chains)
+        if self.structured_llm is not None:
+            try:
+                res = self.structured_llm.invoke(prompt)
+                if isinstance(res, CriticResult):
+                    critic_result = res
+                elif isinstance(res, dict):
+                    critic_result = CriticResult(**res)
+            except Exception as exc:
+                logger.debug("CriticAgent structured_llm failed: %s", exc)
+
+        # 2. Try LLMClient if available (production path)
+        if critic_result is None and self.llm_client is not None:
+            try:
+                raw_text = self.llm_client.generate(prompt=json_prompt)
+                json_str = extract_json_from_text(raw_text)
+                data = json.loads(json_str) if json_str else {}
+                critic_result = CriticResult(**data)
+            except Exception as exc:
+                logger.info("CriticAgent LLMClient generation failed: %s. Trying fallback LLM.", exc)
+
+        # 3. Try raw self.llm
+        if critic_result is None and self.llm is not None:
             try:
                 raw_response = self.llm.invoke(json_prompt)
                 content = getattr(raw_response, "content", raw_response)
@@ -307,19 +360,32 @@ Select exactly one Verdict:
                 critic_result = CriticResult(**data)
             except Exception as raw_exc:
                 logger.warning("CriticAgent raw LLM failed: %s. Using heuristic fallback.", raw_exc)
-                critic_result = CriticResult(
-                    citation_grounding="Automated critique could not verify citation grounding due to model inference failure.",
-                    experimental_parity="Comparative experimental conditions could not be reliably determined.",
-                    generalization="Generalization bounds could not be evaluated automatically.",
-                    comparison="Direct comparison between arguments was inconclusive.",
-                    verdict="Inconclusive",
-                    confidence=0.0,
-                    key_issue="Automated critique fallback invoked due to model extraction failure.",
-                    winner="Neither",
-                    overall_summary="The dialectic debate could not be reliably adjudicated due to model failure.",
-                    final_assessment="Inconclusive: Automated synthesis failed to parse model outputs. Requires manual scientific inspection.",
-                    sources=[],
-                )
+
+        # 4. Fallback if still None
+        if critic_result is None:
+            critic_result = CriticResult(
+                citation_grounding="Automated critique could not verify citation grounding due to model inference failure.",
+                experimental_parity="Comparative experimental conditions could not be reliably determined.",
+                generalization="Generalization bounds could not be evaluated automatically.",
+                comparison="Direct comparison between arguments was inconclusive.",
+                verdict="Inconclusive",
+                confidence=0.0,
+                key_issue="Automated critique fallback invoked due to model extraction failure.",
+                winner="Neither",
+                overall_summary="The dialectic debate could not be reliably adjudicated due to model failure.",
+                final_assessment="Inconclusive: Automated synthesis failed to parse model outputs. Requires manual scientific inspection.",
+                sources=[],
+            )
+
+        # Enforce Rule 1 programmatically: No independent evidence -> cannot be Supported
+        if not support_has_independent and critic_result.verdict == "Supported":
+            critic_result.verdict = "Inconclusive"
+            critic_result.confidence = min(critic_result.confidence, 0.5)
+            critic_result.final_assessment = (
+                f"Inconclusive (Absence of Independent Replication): The claim relies exclusively on target paper "
+                f"internal evidence. Independent external verification could not be established. "
+                f"{critic_result.final_assessment}"
+            )
 
         # Map string verdict to VerdictType enum
         v_map = {

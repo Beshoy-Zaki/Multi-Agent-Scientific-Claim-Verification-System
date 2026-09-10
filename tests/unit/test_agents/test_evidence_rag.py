@@ -1,4 +1,4 @@
-﻿"""Unit tests for EvidenceRAGAgent (Agent 4)."""
+"""Unit tests for EvidenceRAGAgent (Agent 4)."""
 
 from unittest.mock import MagicMock, patch
 
@@ -121,3 +121,19 @@ def test_evidence_rag_missing_active_claim_raises():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_evidence_rag_target_paper_chunks_marked_not_independent():
+    """Target paper chunks must be explicitly tagged as TARGET_PAPER and is_independent=False."""
+    agent = EvidenceRAGAgent(extractor=_fake_extractor())
+
+    state = _sample_state()
+    out_state = agent.execute(state)
+
+    claim_state = out_state["claims"]["C1"]
+    bundle_id = claim_state["evidence_bundle_ids"][0]
+    stored = out_state["global_evidence_store"][bundle_id]
+
+    assert stored["source_type"] == "TARGET_PAPER"
+    assert stored["is_independent"] is False
+

@@ -26,7 +26,8 @@ prompts:
     3. Categorize each claim into one of the allowed claim types: performance, efficiency, causal, generalization, methodological, novelty.
     4. Extract quantitative benchmarks and evaluation metrics where available.
     5. Avoid Claim Overlap & Redundancy: Consolidate related metrics or sub-propositions into distinct, independent claims. Do not produce multiple claims that differ only by metric variants of the same core finding.
-    6. Return the extracted claims as a valid JSON list conforming strictly to the schema.
+    6. Scoping & Hedging Integrity: Accurately preserve any scope limitations, benchmarks, experimental conditions, or caveats stated by the authors. Do NOT broaden the claim beyond what the authors empirically claim, as artificial broadening creates strawman claims.
+    7. Return the extracted claims as a valid JSON list conforming strictly to the schema.
   user_prompt: |
     Extract up to {max_claims} distinct, non-overlapping empirical scientific claims from the following research paper:
     === PAPER TEXT ===

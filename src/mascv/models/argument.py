@@ -1,7 +1,7 @@
 """Adversarial argument schemas for Support, Attack, and Critic agents."""
 
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 
 class Argument(BaseModel):
@@ -14,6 +14,11 @@ class Argument(BaseModel):
     conclusion: str = Field(default="")
     strength: str = Field(default="Moderate")  # "Strong", "Moderate", "Weak"
     identified_limitations: List[str] = Field(default_factory=list)
+    # This is application-derived provenance, never an LLM judgement.  A
+    # missing value must fail closed rather than turn an unverified argument
+    # into independent support.
+    has_independent_evidence: StrictBool = Field(default=False)
+    evidence_types_used: List[str] = Field(default_factory=list)
 
 
 class AdversarialDebate(BaseModel):

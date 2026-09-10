@@ -8,10 +8,21 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from mascv.agents.base import BaseAgent
 from mascv.models.argument import Argument
-from mascv.models.evidence import EvidenceBundle
+from mascv.models.evidence import EvidenceBundle, is_independent_external_evidence
+from pydantic import BaseModel, Field
 
 # Picks up GOOGLE_API_KEY / GEMINI_API_KEY from a .env file if present.
 load_dotenv()
+
+
+class SupportArgumentDraft(BaseModel):
+    """LLM-authored rhetoric, excluding application-owned provenance fields."""
+
+    premises: List[str] = Field(default_factory=list)
+    cited_evidence_ids: List[str] = Field(default_factory=list)
+    conclusion: str = ""
+    strength: str = "Moderate"
+    identified_limitations: List[str] = Field(default_factory=list)
 
 
 @tool
@@ -92,7 +103,7 @@ class SupportAgent(BaseAgent):
 
         self.structured_llm = (
             self.llm.with_structured_output(
-                Argument
+                SupportArgumentDraft
             )
         )
 
@@ -142,7 +153,8 @@ class SupportAgent(BaseAgent):
                 ):
                     item = item.model_dump()
 
-                evidence.append(item)
+                if item.get("claim_id") == claim["id"]:
+                    evidence.append(item)
 
         argument = self.construct_affirmative_case(
             claim_id=claim["id"],
@@ -171,103 +183,137 @@ class SupportAgent(BaseAgent):
         evidence: List[Dict[str, Any]],
     ) -> Argument:
 
-        supporting_evidence = [
+        independent_supporting = [
             item
             for item in evidence
-            if item.get("relationship")
-            in {
-                "SUPPORTS",
-                "REPLICATES",
-            }
+            if item.get("relationship") in {"SUPPORTS", "REPLICATES"}
+            and is_independent_external_evidence(item, claim_id)
         ]
 
-        if not supporting_evidence:
+        internal_supporting = [
+            item
+            for item in evidence
+            if item.get("relationship") in {"SUPPORTS", "REPLICATES"}
+            and not is_independent_external_evidence(item, claim_id)
+        ]
 
-            return Argument(
-                agent_name="SupportAgent",
-                claim_id=claim_id,
-                stance="FOR",
-                premises=[],
-                cited_evidence_ids=[],
-                conclusion=(
-                    "The available evidence does not "
-                    "provide a defensible supporting case."
-                ),
-                strength="Weak",
-                identified_limitations=[
-                    "No SUPPORTS or REPLICATES evidence "
-                    "was retrieved."
-                ],
-            )
-
-        evidence_text = "\n\n".join(
-            [
-                (
-                    f"Evidence ID: {item['id']}\n"
-                    f"Source: {item['source_title']}\n"
-                    f"Location: {item['location']}\n"
-                    f"Relationship: {item['relationship']}\n"
-                    f"Content: {item['content']}\n"
-                    f"Context: {item.get('context', '')}"
+        # Critical: When zero independent external evidence was discovered
+        if not independent_supporting:
+            if internal_supporting:
+                target_ids = [item["id"] for item in internal_supporting[:3]]
+                return Argument(
+                    agent_name="SupportAgent",
+                    claim_id=claim_id,
+                    stance="FOR",
+                    premises=[
+                        f"[TARGET PAPER INTERNAL] {item.get('content', '')[:250]}"
+                        for item in internal_supporting[:2]
+                    ],
+                    cited_evidence_ids=target_ids,
+                    conclusion=(
+                        "The target paper provides internal empirical assertions for this proposition, "
+                        "but NO independent external literature or replication evidence was retrieved. "
+                        "Independent empirical support cannot be established from the target paper alone."
+                    ),
+                    strength="Weak",
+                    identified_limitations=[
+                        "Lacks independent external verification; proposition relies solely on internal target-paper assertions."
+                    ],
+                    has_independent_evidence=False,
+                    evidence_types_used=["TARGET_PAPER_INTERNAL"],
                 )
-                for item in supporting_evidence
-            ]
-        )
+            else:
+                return Argument(
+                    agent_name="SupportAgent",
+                    claim_id=claim_id,
+                    stance="FOR",
+                    premises=[],
+                    cited_evidence_ids=[],
+                    conclusion=(
+                        "The available evidence does not provide a defensible supporting case. "
+                        "No independent external literature or replication was found."
+                    ),
+                    strength="Weak",
+                    identified_limitations=[
+                        "No SUPPORTS or REPLICATES evidence was retrieved from independent literature."
+                    ],
+                    has_independent_evidence=False,
+                    evidence_types_used=[],
+                )
+
+        all_supporting = independent_supporting + internal_supporting
+        evidence_entries = []
+        for item in all_supporting:
+            prov = "INDEPENDENT EXTERNAL SOURCE" if is_independent_external_evidence(item, claim_id) else "TARGET PAPER INTERNAL"
+            evidence_entries.append(
+                f"Evidence ID: {item['id']}\n"
+                f"Provenance: [{prov}]\n"
+                f"Source: {item['source_title']}\n"
+                f"Location: {item['location']}\n"
+                f"Relationship: {item['relationship']}\n"
+                f"Content: {item['content']}\n"
+                f"Context: {item.get('context', '')}"
+            )
+        evidence_text = "\n\n".join(evidence_entries)
 
         prompt = f"""
-You are the Support Agent in a scientific
-claim verification system.
+You are the Support Agent in a scientific claim verification system.
+Your responsibility is to construct the strongest defensible affirmative case FOR the claim.
 
-Your job is to construct the strongest
-defensible argument FOR the claim.
+CRITICAL MANDATE:
+1. Distinguish between [INDEPENDENT EXTERNAL SOURCE] and [TARGET PAPER INTERNAL].
+   - Target paper internal passages represent the authors' own assertions.
+   - Independent external sources represent external replication or peer corroboration.
+   - You MUST NOT cite target paper internal passages as independent confirmation.
+2. Label every premise with its provenance: [INDEPENDENT REPLICATION], [TARGET PAPER INTERNAL], or [INFERENCE].
+3. Use ONLY the supplied evidence. Do not invent facts, numbers, or citations.
+4. cited_evidence_ids may contain ONLY IDs present in the supplied evidence.
+5. Provide a realistic strength: Strong, Moderate, or Weak.
 
-CLAIM:
+CLAIM UNDER INVESTIGATION:
 {claim_text}
 
 AVAILABLE SUPPORTING EVIDENCE:
 {evidence_text}
-
-Rules:
-
-1. Use ONLY the supplied evidence.
-2. Do not invent facts, experiments,
-   numbers, authors, or citations.
-3. Every premise must be directly supported
-   by one or more supplied evidence IDs.
-4. Prefer independent replications.
-5. Prefer consistent results across benchmarks.
-6. Prefer direct quantitative experimental results.
-7. Prefer ablation evidence when available.
-8. Distinguish direct evidence from indirect evidence.
-9. Mention important limitations.
-10. Do not turn the argument into a generic summary.
-11. The conclusion must answer why the claim
-    might reasonably be true.
-12. cited_evidence_ids may contain ONLY IDs
-    present in the supplied evidence.
-13. Strength must be Strong, Moderate, or Weak.
 """
 
         try:
-            argument = self.structured_llm.invoke(
+            draft = self.structured_llm.invoke(
                 prompt
             )
-        except Exception as exc:
-            valid_first = [item["id"] for item in supporting_evidence[:3]]
             argument = Argument(
                 agent_name="SupportAgent",
                 claim_id=claim_id,
                 stance="FOR",
-                premises=[item.get("content", "")[:200] for item in supporting_evidence[:3]],
+                premises=draft.premises,
+                cited_evidence_ids=draft.cited_evidence_ids,
+                conclusion=draft.conclusion,
+                strength=draft.strength,
+                identified_limitations=draft.identified_limitations,
+                has_independent_evidence=True,
+                evidence_types_used=["EXTERNAL_EMPIRICAL"],
+            )
+        except Exception as exc:
+            valid_first = [item["id"] for item in all_supporting[:3]]
+            argument = Argument(
+                agent_name="SupportAgent",
+                claim_id=claim_id,
+                stance="FOR",
+                premises=[
+                    f"[{'INDEPENDENT REPLICATION' if is_independent_external_evidence(item, claim_id) else 'TARGET PAPER INTERNAL'}] {item.get('content', '')[:200]}"
+                    for item in all_supporting[:2]
+                ],
                 cited_evidence_ids=valid_first,
-                conclusion="Retrieved primary evidence passages report observations consistent with the proposition, subject to verification.",
+                conclusion="Independent external literature reports observations consistent with the proposition, subject to verification.",
                 strength="Moderate" if len(valid_first) >= 2 else "Weak",
                 identified_limitations=["Automated argument synthesis fallback invoked; limited to direct passage matching."],
+                has_independent_evidence=True,
+                evidence_types_used=["EXTERNAL_EMPIRICAL"],
             )
 
         valid_ids = {
             item["id"]
-            for item in supporting_evidence
+            for item in all_supporting
         }
 
         argument.cited_evidence_ids = [
@@ -280,4 +326,9 @@ Rules:
         if not argument.cited_evidence_ids:
             argument.strength = "Weak"
 
-        return argument
+        argument.has_independent_evidence = True
+        argument.evidence_types_used = ["EXTERNAL_EMPIRICAL"]
+        if internal_supporting:
+            argument.evidence_types_used.append("TARGET_PAPER_INTERNAL")
+
+        return argument

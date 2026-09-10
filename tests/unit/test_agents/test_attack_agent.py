@@ -76,3 +76,31 @@ def test_attack_agent_missing_active_claim_raises():
 
     with pytest.raises(ValueError, match="active_claim_id is missing"):
         agent.execute(state)
+
+
+def test_attack_agent_independence_requires_claim_scoped_external_evidence():
+    mock_llm = MagicMock()
+    mock_structured = MagicMock()
+    mock_structured.invoke.return_value = AttackResult(
+        attack_points=["[DIRECTLY EVIDENCED] A counter-study disagrees."],
+        evidence_found=["https://arxiv.org/abs/2406.03136"],
+        vulnerabilities=["Limited generalization."],
+        strength="Moderate",
+    )
+    mock_llm.with_structured_output.return_value = mock_structured
+    agent = AttackAgent(llm=mock_llm)
+
+    state = _sample_state()
+    state["claims"]["C1"]["evidence_bundle_ids"] = ["E-C2"]
+    state["global_evidence_store"] = {
+        "E-C2": {
+            "id": "E-C2", "claim_id": "C2", "source_paper_id": "P2",
+            "source_title": "External paper", "location": "p. 1",
+            "content": "Counter-evidence for C2.", "relationship": "CONTRADICTS",
+            "source_type": "EXTERNAL_SOURCE", "is_independent": True,
+        }
+    }
+
+    argument = agent.execute(state)["claims"]["C1"]["attack_argument"]
+
+    assert argument.has_independent_evidence is False

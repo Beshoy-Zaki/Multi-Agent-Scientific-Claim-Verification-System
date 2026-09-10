@@ -11,6 +11,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from mascv.agents.base import BaseAgent
 from mascv.models.argument import Argument
+from mascv.models.evidence import is_independent_external_evidence
 from mascv.models.evidence import EvidenceBundle
 from mascv.tools.evidence_tools import search_scientific_evidence, calculate
 from mascv.utils.text_processing import extract_json_from_text
@@ -67,30 +68,32 @@ class AttackAgent(BaseAgent):
         self,
         config: Optional[Dict[str, Any]] = None,
         llm: Optional[Any] = None,
+        search_tool: Optional[Any] = None,
     ) -> None:
         """Initialize AttackAgent with configuration and Gemma 4 model."""
         super().__init__(name="AttackAgent", config=config)
 
         if llm is not None:
             self.llm = llm
+            self.llm_client = None
         else:
-            model_name = self.config.get("model", "gemma-4-26b-a4b-it")
-            temperature = float(self.config.get("temperature", 0.2))
+            model_name = self.config.get("model", "gemma-4-26b-a4b-it") if self.config else "gemma-4-26b-a4b-it"
+            temperature = float(self.config.get("temperature", 0.2)) if self.config else 0.2
             self.llm = ChatGoogleGenerativeAI(
                 model=model_name,
                 temperature=temperature,
                 max_retries=2,
                 timeout=120.0,
             )
-
-        from mascv.utils.llm import LLMClient
-        self.llm_client = LLMClient(
-            model_name=self.config.get("model", "gemma-4-26b-a4b-it"),
-            temperature=float(self.config.get("temperature", 0.2)),
-            thinking_level="minimal",
-        )
+            from mascv.utils.llm import LLMClient
+            self.llm_client = LLMClient(
+                model_name=model_name,
+                temperature=temperature,
+                thinking_level="minimal",
+            )
 
         self.structured_llm = self.llm.with_structured_output(AttackResult)
+        self.search_tool = search_tool
         self.tools = [search_scientific_evidence, calculate]
 
     def execute(
@@ -136,20 +139,51 @@ class AttackAgent(BaseAgent):
         # Collect relevant evidence passages from global evidence store
         evidence_store = state.get("global_evidence_store", {}) if isinstance(state, dict) else getattr(state, "global_evidence_store", {})
         evidence_texts = []
+        has_independent_evidence = False
         for eid in evidence_ids:
             item = evidence_store.get(eid)
             if item:
                 cnt = item.get("content", "") if isinstance(item, dict) else getattr(item, "content", "")
                 rel = item.get("relationship", "") if isinstance(item, dict) else getattr(item, "relationship", "")
-                evidence_texts.append(f"[{eid}] ({rel}): {cnt}")
+                st_type = item.get("source_type", "") if isinstance(item, dict) else getattr(item, "source_type", "")
+                evidence_texts.append(f"[{eid}] ({st_type} - {rel}): {cnt}")
+                has_independent_evidence = has_independent_evidence or is_independent_external_evidence(
+                    item, active_claim_id
+                )
 
-        # Search for external counter-evidence, critiques, and limitations
-        external_evidence = ""
-        try:
-            search_query = f"{claim_statement} limitations weaknesses disadvantages failure modes"
-            external_evidence = search_scientific_evidence.invoke(search_query)
-        except Exception as exc:
-            logger.warning("Adversarial search invocation failed: %s", exc)
+        # Collect external literature discovered for this claim by PaperSearchAgent
+        claim_papers = (
+            getattr(claim_state, "discovered_papers_metadata", [])
+            if not isinstance(claim_state, dict)
+            else claim_state.get("discovered_papers_metadata", [])
+        )
+        ext_lit = []
+        for p in claim_papers:
+            p_title = getattr(p, "title", p.get("title") if isinstance(p, dict) else "Discovered Publication")
+            p_rel = getattr(p, "relationship", p.get("relationship") if isinstance(p, dict) else "")
+            p_findings = getattr(p, "key_findings", p.get("key_findings") if isinstance(p, dict) else "")
+            p_url = getattr(p, "url", p.get("url") if isinstance(p, dict) else "")
+            ext_lit.append(f"- [{p_rel}] {p_title} ({p_url}): {p_findings}")
+
+        external_evidence = "\n".join(ext_lit) if ext_lit else ""
+
+        # Search for external counter-evidence only if search_tool is injected or explicitly enabled and no lit found
+        params = self.config.get("parameters", {}) if self.config else {}
+        allow_autonomous = params.get("allow_autonomous_search", False) if isinstance(params, dict) else False
+
+        if (self.search_tool or allow_autonomous) and not external_evidence:
+            try:
+                tool_to_use = self.search_tool or search_scientific_evidence
+                search_query = f"{claim_statement} limitations weaknesses disadvantages failure modes"
+                if hasattr(tool_to_use, "invoke"):
+                    tool_out = tool_to_use.invoke(search_query)
+                elif callable(tool_to_use):
+                    tool_out = tool_to_use(search_query)
+                else:
+                    tool_out = ""
+                external_evidence += f"\n{tool_out}"
+            except Exception as exc:
+                logger.warning("Adversarial search invocation failed: %s", exc)
 
         # Construct adversarial counter-case
         argument = self.construct_counter_case(
@@ -158,6 +192,7 @@ class AttackAgent(BaseAgent):
             support_text=support_text,
             evidence_summary="\n".join(evidence_texts),
             external_evidence=external_evidence,
+            has_independent_evidence=has_independent_evidence,
         )
 
         status_msg = f"Attack argument constructed (Strength: {argument.strength})."
@@ -180,6 +215,7 @@ class AttackAgent(BaseAgent):
         support_text: str = "",
         evidence_summary: str = "",
         external_evidence: str = "",
+        has_independent_evidence: bool = False,
     ) -> Argument:
         """
         Challenge the claim and synthesize an adversarial counterargument Argument.
@@ -190,21 +226,28 @@ Your responsibility is to critically challenge the target scientific proposition
 experimental edge cases, unstated hyperparameters, benchmark limitations, scaling failures,
 and potential counter-evidence.
 
+EPISTEMIC GROUNDING MANDATE:
+Every attack point in 'attack_points' MUST begin with its epistemic classification:
+- [DIRECTLY EVIDENCED]: Backed by a specific external counter-study, negative replication, or contradictory benchmark result.
+- [STRONGLY INFERRED]: Deductively derived from the paper's specific methodology, parameters, or equations.
+- [THEORETICAL BOUNDARY]: Legitimate theoretical boundary condition or unstated evaluation assumption.
+Do NOT present arbitrary hypothetical failure modes as demonstrated weaknesses.
+
 TARGET SCIENTIFIC CLAIM:
 {claim_text}
 
 PROPONENT SUPPORT CASE:
 {support_text or "No proponent argument provided."}
 
-AVAILABLE EXTRACTED EVIDENCE (TARGET PAPER):
-{evidence_summary or "No counter-evidence bundles indexed."}
+AVAILABLE EVIDENCE BUNDLES:
+{evidence_summary or "No evidence bundles indexed."}
 
-EXTERNAL CRITIQUES, BENCHMARKS & DISCUSSION:
+EXTERNAL CRITIQUES, BENCHMARKS & DISCOVERED LITERATURE:
 {external_evidence or "No external critiques found."}
 
 Rules:
-1. Examine methodological assumptions, benchmark bounds, practical trade-offs, and potential overgeneralizations.
-2. Formulate 2-3 specific, rigorous attack points based on the scientific context and external critiques.
+1. Prioritize criticisms that specifically engage the target paper's methodology and baseline comparisons.
+2. Formulate 2-3 specific, rigorous attack points, each prefixed with its epistemic category.
 3. Identify vulnerabilities (e.g. unstated boundary constraints, methodological confounds, evaluation trade-offs).
 4. Distinguish between evidence that directly contradicts vs. evidence that narrows the claim's scope.
 5. Extract exact URLs from the external evidence into 'evidence_found' to ground the attack.
@@ -215,7 +258,7 @@ Rules:
             prompt
             + "\n\nFormat your response as a valid JSON object matching this schema exactly:\n"
             "{\n"
-            '  "attack_points": ["point 1", "point 2"],\n'
+            '  "attack_points": ["[DIRECTLY EVIDENCED] point 1", "[STRONGLY INFERRED] point 2"],\n'
             '  "evidence_found": ["URL or finding 1", "URL or finding 2"],\n'
             '  "vulnerabilities": ["vulnerability 1"],\n'
             '  "strength": "Strong" | "Moderate" | "Weak"\n'
@@ -223,21 +266,24 @@ Rules:
         )
 
         attack_result = None
-        try:
-            raw_text = self.llm_client.generate(prompt=json_prompt)
-            json_str = extract_json_from_text(raw_text)
-            data = json.loads(json_str) if json_str else {}
-            attack_result = AttackResult(**data)
-        except Exception as exc:
-            logger.info("AttackAgent LLMClient generation failed: %s. Trying structured output.", exc)
+        if self.llm_client is not None:
+            try:
+                raw_text = self.llm_client.generate(prompt=json_prompt)
+                json_str = extract_json_from_text(raw_text)
+                data = json.loads(json_str) if json_str else {}
+                attack_result = AttackResult(**data)
+            except Exception as exc:
+                logger.info("AttackAgent LLMClient generation failed: %s. Trying structured output.", exc)
+
+        if attack_result is None:
             try:
                 attack_result = self.structured_llm.invoke(prompt)
             except Exception as raw_exc:
                 logger.warning("AttackAgent structured generation failed: %s. Using heuristic fallback.", raw_exc)
                 attack_result = AttackResult(
                     attack_points=[
-                        "Generalizability may be bounded by specific baseline conditions, metrics, or sample constraints.",
-                        "Potential sensitivity to unstated hyperparameters or boundary conditions under stress-testing.",
+                        "[STRONGLY INFERRED] Generalizability is bounded by specific baseline configurations, evaluation datasets, and parameter distributions.",
+                        "[THEORETICAL BOUNDARY] Potential sensitivity to unstated hyperparameters or boundary conditions under stress-testing.",
                     ],
                     evidence_found=[],
                     vulnerabilities=["Boundary condition constraints and limited cross-domain stress-testing."],
@@ -245,7 +291,7 @@ Rules:
                 )
 
         # Build canonical Argument model for dialectic synthesis
-        premises = attack_result.attack_points or ["Methodological limitations exist under constrained evaluation settings."]
+        premises = attack_result.attack_points or ["[STRONGLY INFERRED] Methodological limitations exist under constrained evaluation settings."]
         vulnerabilities = attack_result.vulnerabilities or ["Boundary condition constraints."]
         conclusion = (
             f"The claim is vulnerable to boundary limitations: {'; '.join(vulnerabilities[:2])}"
@@ -274,6 +320,8 @@ Rules:
             conclusion=conclusion,
             strength=attack_result.strength,
             identified_limitations=vulnerabilities,
+            has_independent_evidence=has_independent_evidence,
+            evidence_types_used=["ADVERSARIAL_CRITIQUE"],
         )
 
 

@@ -10,13 +10,16 @@ from mascv.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+_SENTINEL = object()
+
+
 class SupervisorAgent(BaseAgent):
     """Orchestrates investigation iterations and decides whether additional cycles are needed."""
 
     def __init__(
         self,
         config: Optional[Dict[str, Any]] = None,
-        llm_client: Optional[Any] = None,
+        llm_client: Any = _SENTINEL,
     ) -> None:
         if config is None:
             try:
@@ -31,12 +34,15 @@ class SupervisorAgent(BaseAgent):
         self.thinking_level = agent_config.get("thinking_level", "HIGH")
         self.temperature = agent_config.get("temperature", 0.2)
 
-        from mascv.utils.llm import LLMClient
-        self.llm_client = llm_client or LLMClient(
-            model_name=self.model_name,
-            temperature=self.temperature,
-            thinking_level=self.thinking_level,
-        )
+        if llm_client is not _SENTINEL:
+            self.llm_client = llm_client
+        else:
+            from mascv.utils.llm import LLMClient
+            self.llm_client = LLMClient(
+                model_name=self.model_name,
+                temperature=self.temperature,
+                thinking_level=self.thinking_level,
+            )
 
         params = agent_config.get("parameters", {})
         self.max_search_cycles = params.get("max_search_cycles", 3)
@@ -167,6 +173,10 @@ class SupervisorAgent(BaseAgent):
             1 for c in state.claims.values()
             if _get_v_type(_get_verdict(c)) == VerdictType.UNSUPPORTED.value
         )
+        inconclusive_count = sum(
+            1 for c in state.claims.values()
+            if _get_v_type(_get_verdict(c)) == VerdictType.INCONCLUSIVE.value
+        )
 
         # Build detailed verdicts breakdown
         breakdown_lines = []
@@ -199,6 +209,7 @@ class SupervisorAgent(BaseAgent):
                     supported_count=supported_count,
                     partially_supported_count=partially_supported_count,
                     unsupported_count=unsupported_count,
+                    inconclusive_count=inconclusive_count,
                     verdicts_breakdown=verdicts_breakdown,
                 )
                 if hasattr(self.llm_client, "generate"):
@@ -219,9 +230,10 @@ class SupervisorAgent(BaseAgent):
             f"## Overall Assessment\n"
             f"The multi-agent investigation evaluated {total_claims} claim(s) across "
             f"{state.system_iteration} iteration(s).\n"
-            f"- **Supported Claims:** {supported_count}\n"
-            f"- **Partially Supported Claims:** {partially_supported_count}\n"
-            f"- **Unsupported / Refuted Claims:** {unsupported_count}\n\n"
+            f"- **Supported Claims:** {supported_count} (Confirmed with Independent Replication)\n"
+            f"- **Partially Supported Claims:** {partially_supported_count} (Constrained Scope / Methodological Bounds)\n"
+            f"- **Unsupported / Refuted Claims:** {unsupported_count}\n"
+            f"- **Inconclusive / Unverified Claims:** {inconclusive_count} (Absence of Independent Replication)\n\n"
             f"## Claim Verdicts Breakdown\n"
             f"{verdicts_breakdown}\n"
         )
