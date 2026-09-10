@@ -213,7 +213,7 @@ MASCV was designed, engineered, and evaluated through the collaborative contribu
 
 * **Beshoy Zaki** ([@Beshoy-Zaki](https://github.com/Beshoy-Zaki)) — System Architecture, PDF Parser, Supervisor & Orchestration Workflow, Live Streaming UI & FastAPI Dashboard, Non-Circularity Framework & Model Contracts.
 * **Verina Hany** ([@VerinaHany21](https://github.com/VerinaHany21)) — Supervisor, Claim Analyst, and Paper Search Agent Frameworks, Academic Search Client Integration, Multi-Agent Schema Integration & Configuration.
-* **Zeina Elsadek** ([@zeinamostafa254](https://github.com/zeinamostafa254)) — Initial multi-agent modules, evidence retrieval & verification tooling, testing suites, and core agent implementations.
+* **Zeina Mostafa** ([@zeinamostafa254](https://github.com/zeinamostafa254)) — Initial multi-agent modules, evidence retrieval & verification tooling, testing suites, and core agent implementations.
 * **Jana Kassem** ([@janaosmaneng-cyber](https://github.com/janaosmaneng-cyber)) — Adversarial Attack & Boundary Testing Agent, Critic Agent Adjudication & Evidence Verification Tools, Epistemic Rigor Guidelines.
 
 ---
