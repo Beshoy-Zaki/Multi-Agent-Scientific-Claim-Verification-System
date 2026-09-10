@@ -223,7 +223,7 @@ MASCV was designed, engineered, and evaluated through the collaborative contribu
 If you reference or build upon this project, please cite:
 ```bibtex
 @misc{zaki2026mascv,
-  author = {Beshoy Zaki and Jana Kassem and Verina Hany and Zeina Elsadek},
+  author = {Beshoy Zaki and Jana Kassem and Verina Hany and Zeina Mostafa},
   title = {Multi-Agent Scientific Claim Verification System (MASCV): An Evidence-Grounded Multi-Agent System for Adversarial Analysis of Scientific Claims},
   year = {2026},
   url = {https://github.com/Beshoy-Zaki/Multi-Agent-Scientific-Claim-Verification-System}
